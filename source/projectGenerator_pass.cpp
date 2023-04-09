@@ -24,11 +24,16 @@
 
 bool ProjectGenerator::passStaticIncludeObject(uint& startPos, uint& endPos, StaticList& staticIncludes)
 {
+    startPos = m_inLine.find_first_not_of(".\\/", startPos); // Skip any ./ or ../
+    if (startPos == string::npos) {
+        endPos = startPos;
+        return true; // skip this line as its empty
+    }
     // Add the found string to internal storage
     endPos = m_inLine.find_first_of(". \t", startPos);
     if ((endPos != string::npos) && (m_inLine.at(endPos) == '.')) {
         // Skip any ./ or ../
-        const uint endPos2 = m_inLine.find_first_not_of(".\\", endPos + 1);
+        const uint endPos2 = m_inLine.find_first_not_of(".\\/", endPos + 1);
         if ((endPos2 != string::npos) && (endPos2 > endPos + 1)) {
             endPos = m_inLine.find_first_of(". \t", endPos2 + 1);
         }
@@ -98,7 +103,7 @@ bool ProjectGenerator::passStaticIncludeLine(uint startPos, StaticList& staticIn
 bool ProjectGenerator::passStaticInclude(const uint length, StaticList& staticIncludes)
 {
     // Remove the identifier and '='
-    uint startPos = m_inLine.find_first_not_of(" +=:", length);
+    uint startPos = m_inLine.find_first_not_of("+=: \t", length);
     if (!passStaticIncludeLine(startPos, staticIncludes)) {
         return true;
     }
@@ -125,7 +130,7 @@ bool ProjectGenerator::passDynamicIncludeObject(uint& startPos, uint& endPos, st
         endPos = m_inLine.find(')', startPos);
         const string dynInc = m_inLine.substr(startPos + 2, endPos - startPos - 2);
         // Find it in the unknown list
-        auto objectList = m_unknowns.find(dynInc);
+        const auto objectList = m_unknowns.find(dynInc);
         if (objectList != m_unknowns.end()) {
             // Loop over each internal object
             for (auto object = objectList->second.begin(); object < objectList->second.end(); ++object) {
@@ -236,47 +241,120 @@ bool ProjectGenerator::passDynamicInclude(const uint length, StaticList& include
     return true;
 }
 
-bool ProjectGenerator::passCInclude()
+bool ProjectGenerator::passCondition(const string& condition, StaticList& list, UnknownList& replace, const uint offset)
 {
+    const auto cond = m_configHelper.getConfigOptionPrefixed(condition);
+    if (cond == m_configHelper.m_configValues.end()) {
+        outputError("Unknown configuration condition (" + condition + ")");
+        return false;
+    }
+    if (cond->m_value == "0") {
+        return true;
+    }
+    StaticList temp;
+    if (passStaticInclude(offset, temp)) {
+        for (auto& i : temp) {
+            // Check if object already included in internal list
+            if (find(list.begin(), list.end(), i) == list.end()) {
+                // Check if already in replace list
+                if (replace.find(i) == replace.end() ||
+                    find(replace[i].begin(), replace[i].end(), condition) == replace[i].end()) {
+                    replace[i].push_back(condition);
+                }
+            }
+        }
+        return true;
+    }
+    return false;
+}
+
+bool ProjectGenerator::passDCondition(
+    const string& condition, StaticList& list, UnknownList& replace, const uint offset)
+{
+    const auto cond = m_configHelper.getConfigOptionPrefixed(condition);
+    if (cond == m_configHelper.m_configValues.end()) {
+        outputInfo("Unknown configuration condition (" + condition + ")");
+        return false;
+    }
+    if (cond->m_value == "0") {
+        return true;
+    }
+    StaticList temp;
+    if (passDynamicInclude(offset, temp)) {
+        for (auto& i : temp) {
+            // Check if object already included in internal list
+            if (find(list.begin(), list.end(), i) == list.end()) {
+                // Check if already in replace list
+                if (replace.find(i) == replace.end() ||
+                    find(replace[i].begin(), replace[i].end(), condition) == replace[i].end()) {
+                    replace[i].push_back(condition);
+                }
+            }
+        }
+        return true;
+    }
+    return false;
+}
+
+bool ProjectGenerator::passCInclude(const std::string& condition)
+{
+    if (!condition.empty()) {
+        return passCondition(condition, m_includes, m_replaceIncludes, 4);
+    }
     return passStaticInclude(4, m_includes);
 }
 
-bool ProjectGenerator::passDCInclude()
+bool ProjectGenerator::passDCInclude(const std::string& condition)
 {
+    if (!condition.empty()) {
+        return passDCondition(condition, m_includes, m_replaceIncludes, 5);
+    }
     return passDynamicInclude(5, m_includes);
 }
 
-bool ProjectGenerator::passASMInclude(const uint offset)
+bool ProjectGenerator::passASMInclude(const uint offset, const std::string& condition)
 {
     // Check if supported option
     if (m_configHelper.isASMEnabled()) {
+        if (!condition.empty()) {
+            return passCondition(condition, m_includes, m_replaceIncludes, 9 + offset);
+        }
         return passStaticInclude(9 + offset, m_includes);
     }
     return true;
 }
 
-bool ProjectGenerator::passDASMInclude(const uint offset)
+bool ProjectGenerator::passDASMInclude(const uint offset, const std::string& condition)
 {
     // Check if supported option
     if (m_configHelper.isASMEnabled()) {
+        if (!condition.empty()) {
+            return passDCondition(condition, m_includes, m_replaceIncludes, 10 + offset);
+        }
         return passDynamicInclude(10 + offset, m_includes);
     }
     return true;
 }
 
-bool ProjectGenerator::passMMXInclude()
+bool ProjectGenerator::passMMXInclude(const std::string& condition)
 {
     // Check if supported option
     if (m_configHelper.getConfigOptionPrefixed("HAVE_MMX")->m_value == "1") {
+        if (!condition.empty()) {
+            return passDCondition(condition, m_includes, m_replaceIncludes, 8);
+        }
         return passStaticInclude(8, m_includes);
     }
     return true;
 }
 
-bool ProjectGenerator::passDMMXInclude()
+bool ProjectGenerator::passDMMXInclude(const std::string& condition)
 {
     // Check if supported option
     if (m_configHelper.getConfigOptionPrefixed("HAVE_MMX")->m_value == "1") {
+        if (!condition.empty()) {
+            return passDCondition(condition, m_includes, m_replaceIncludes, 9);
+        }
         return passDynamicInclude(9, m_includes);
     }
     return true;
@@ -360,6 +438,26 @@ bool ProjectGenerator::passDLibUnknown()
     return true;
 }
 
+bool ProjectGenerator::passSharedDCInclude()
+{
+    return passDCondition("CONFIG_SHARED", m_includes, m_replaceIncludes, 10);
+}
+
+bool ProjectGenerator::passSharedCInclude()
+{
+    return passCondition("CONFIG_SHARED", m_includes, m_replaceIncludes, 10);
+}
+
+bool ProjectGenerator::passStaticDCInclude()
+{
+    return passDCondition("CONFIG_STATIC", m_includes, m_replaceIncludes, 10);
+}
+
+bool ProjectGenerator::passStaticCInclude()
+{
+    return passCondition("CONFIG_STATIC", m_includes, m_replaceIncludes, 10);
+}
+
 bool ProjectGenerator::passMake()
 {
     const string mainFile = m_projectDir + "MakeFile";
@@ -372,19 +470,20 @@ bool ProjectGenerator::passMake()
         m_inputFile.open(makeFile);
         if (m_inputFile.is_open()) {
             // Read each line in the MakeFile
+            string condition;
             while (getline(m_inputFile, m_inLine)) {
                 // Check what information is included in the current line
                 if (m_inLine.substr(0, 4) == "OBJS") {
                     // Found some c includes
                     if (m_inLine.at(4) == '-') {
                         // Found some dynamic c includes
-                        if (!passDCInclude()) {
+                        if (!passDCInclude(condition)) {
                             m_inputFile.close();
                             return false;
                         }
                     } else {
                         // Found some static c includes
-                        if (!passCInclude()) {
+                        if (!passCInclude(condition)) {
                             m_inputFile.close();
                             return false;
                         }
@@ -394,13 +493,13 @@ bool ProjectGenerator::passMake()
                     const uint offset = (m_inLine.at(0) == 'X') ? 2 : 0;
                     if (m_inLine.at(9 + offset) == '-') {
                         // Found some dynamic ASM includes
-                        if (!passDASMInclude(offset)) {
+                        if (!passDASMInclude(offset, condition)) {
                             m_inputFile.close();
                             return false;
                         }
                     } else {
                         // Found some static ASM includes
-                        if (!passASMInclude(offset)) {
+                        if (!passASMInclude(offset, condition)) {
                             m_inputFile.close();
                             return false;
                         }
@@ -409,13 +508,13 @@ bool ProjectGenerator::passMake()
                     // Found some ASM includes
                     if (m_inLine.at(8) == '-') {
                         // Found some dynamic MMX includes
-                        if (!passDMMXInclude()) {
+                        if (!passDMMXInclude(condition)) {
                             m_inputFile.close();
                             return false;
                         }
                     } else {
                         // Found some static MMX includes
-                        if (!passMMXInclude()) {
+                        if (!passMMXInclude(condition)) {
                             m_inputFile.close();
                             return false;
                         }
@@ -456,6 +555,36 @@ bool ProjectGenerator::passMake()
                             return false;
                         }
                     }
+                } else if (m_inLine.substr(0, 9) == "SHLIBOBJS") {
+                    // Found some libs
+                    if (m_inLine.at(9) == '-') {
+                        // Found some dynamic include
+                        if (!passSharedDCInclude()) {
+                            m_inputFile.close();
+                            return false;
+                        }
+                    } else {
+                        // Found some static include
+                        if (!passSharedCInclude()) {
+                            m_inputFile.close();
+                            return false;
+                        }
+                    }
+                } else if (m_inLine.substr(0, 9) == "STLIBOBJS") {
+                    // Found some libs
+                    if (m_inLine.at(9) == '-') {
+                        // Found some dynamic include
+                        if (!passStaticDCInclude()) {
+                            m_inputFile.close();
+                            return false;
+                        }
+                    } else {
+                        // Found some static include
+                        if (!passStaticCInclude()) {
+                            m_inputFile.close();
+                            return false;
+                        }
+                    }
                 } else if (m_inLine.find("-OBJS-$") != string::npos) {
                     // Found unknown
                     if (!passDUnknown()) {
@@ -480,14 +609,44 @@ bool ProjectGenerator::passMake()
                         outputInfo("Unknown ifdef configuration option (" + config + ")");
                         return false;
                     }
-                    if (option->m_value != "1") {
+                    if (option->m_value == "0") {
                         // Skip everything between the ifdefs
                         while (getline(m_inputFile, m_inLine)) {
                             if ((m_inLine.substr(0, 5) == "endif") || (m_inLine.substr(0, 4) == "else")) {
                                 break;
                             }
                         }
+                    } else {
+                        // Check if the config option is for a reserved type
+                        if (m_configHelper.m_replaceList.find(config) != m_configHelper.m_replaceList.end()) {
+                            condition = config;
+                        }
                     }
+                } else if (m_inLine.substr(0, 5) == "else") {
+                    // If we have no previous reserved condition then we can just pull in everything after the 'else'
+                    if (!condition.empty()) {
+                        // Condition is now the opposite of what it was
+                        if (condition == "ARCH_X86_32") {
+                            condition = "ARCH_X86_64";
+                        } else if (condition == "ARCH_X86_64") {
+                            condition = "ARCH_X86_32";
+                        } else if (condition == "CONFIG_SHARED") {
+                            condition = "CONFIG_STATIC";
+                        } else if (condition == "CONFIG_STATIC") {
+                            condition = "CONFIG_SHARED";
+                        } else {
+                            outputInfo("Unknown ifdef else configuration option (" + condition + ")");
+                            // Skip everything between the ifdefs
+                            while (getline(m_inputFile, m_inLine)) {
+                                if (m_inLine.substr(0, 5) == "endif") {
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                } else if (m_inLine.substr(0, 5) == "endif") {
+                    // Reset the current condition
+                    condition.clear();
                 } else if (m_inLine.substr(0, 7) == "include") {
                     // Need to append the included file to makefile list
                     uint startPos = m_inLine.find_first_not_of(" \t", 7);
@@ -530,6 +689,7 @@ bool ProjectGenerator::passProgramMake()
     while (checks >= 1) {
         // Open the input Makefile
         string makeFile = m_projectDir + "MakeFile";
+        m_inputFile.close();
         m_inputFile.open(makeFile);
         if (!m_inputFile.is_open()) {
             outputError("Could not open open MakeFile (" + makeFile + ")");
@@ -587,7 +747,7 @@ bool ProjectGenerator::passProgramMake()
                     }
                 }
             } else if (((findPos = m_inLine.find("OBJS-$(1)")) != string::npos) && (findPos == 0)) {
-                m_inLine = m_inLine.substr(findPos + 5, m_inLine.find(".o", findPos + 9) + 2 - (findPos + 5));
+                m_inLine = m_inLine.substr(findPos + 5, m_inLine.rfind(".o") + 2 - (findPos + 5));
                 if (m_inLine.at(4) == '-') {
                     // Found some dynamic c includes
                     if (!passDCInclude()) {
@@ -620,10 +780,10 @@ bool ProjectGenerator::passProgramMake()
         }
         m_inputFile.close();
         if (checks == 2) {
-            string ignore;
+            string ignored;
             const string makeFolder = "fftools/";
             makeFile = m_projectDir + makeFolder + "MakeFile";
-            if (findFile(makeFile, ignore)) {
+            if (findFile(makeFile, ignored)) {
                 // If using the Makefile in fftools then we need to read both it and the root Makefile
                 m_projectDir += makeFolder;
             } else {

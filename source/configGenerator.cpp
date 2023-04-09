@@ -24,15 +24,7 @@
 #include <regex>
 
 ConfigGenerator::ConfigGenerator()
-    :
-#ifdef _MSC_VER
-    m_toolchain("msvc")
-#elif defined(_WIN32)
-    m_toolchain("mingw")
-#else
-    m_toolchain("gcc")
-#endif
-    , m_projectName("FFMPEG")
+    : m_projectName("FFMPEG")
 {}
 
 bool ConfigGenerator::passConfig(const int argc, char** argv)
@@ -72,6 +64,9 @@ bool ConfigGenerator::passConfig(const int argc, char** argv)
     }
     // Ensure forced values
     if (!buildForcedValues()) {
+        return false;
+    }
+    if (!buildAutoDetectValues()) {
         return false;
     }
     // Perform validation of values
@@ -127,121 +122,135 @@ bool ConfigGenerator::passConfigureFile()
         m_isLibav = true;
         m_projectName = "LIBAV";
     }
-    // Move to end of header guard (+1 for new line)
-    startPos += 24;
+    // Move to end of header guard
+    startPos += 23 - static_cast<uint>(m_isLibav);
 
     // Build default value list
     DefaultValuesList defaultValues;
     buildFixedValues(defaultValues);
 
-    // Get each defined option till EOF
-    startPos = m_configureFile.find("#define", startPos);
-    uint configEnd = m_configureFile.find("EOF", startPos);
-    if (configEnd == string::npos) {
-        outputError("Failed finding config.h parameters end");
-        return false;
-    }
-    uint endPos = configEnd;
-    while ((startPos != string::npos) && (startPos < configEnd)) {
-        // Skip white space
-        startPos = m_configureFile.find_first_not_of(g_whiteSpace, startPos + 7);
-        // Get first string
-        endPos = m_configureFile.find_first_of(g_whiteSpace, startPos + 1);
-        const string configName = m_configureFile.substr(startPos, endPos - startPos);
-        // Get second string
-        startPos = m_configureFile.find_first_not_of(g_whiteSpace, endPos + 1);
-        endPos = m_configureFile.find_first_of(g_whiteSpace, startPos + 1);
-        string configValue = m_configureFile.substr(startPos, endPos - startPos);
-        // Check if the value is a variable
-        const uint startPos2 = configValue.find('$');
-        if (startPos2 != string::npos) {
-            // Check if it is a function call
-            if (configValue.at(startPos2 + 1) == '(') {
-                endPos = m_configureFile.find(')', startPos);
-                configValue = m_configureFile.substr(startPos, endPos - startPos + 1);
+    for (uint searches = 0; searches < 2; ++searches) {
+        // Get each defined option till EOF
+        uint configEnd = m_configureFile.find("EOF", startPos + 1);
+        startPos = m_configureFile.find("#define", startPos + 1);
+        if (configEnd == string::npos) {
+            outputError("Failed finding config.h parameters end");
+            return false;
+        }
+        uint endPos = configEnd;
+        while ((startPos != string::npos) && (startPos < configEnd)) {
+            // Skip white space
+            startPos = m_configureFile.find_first_not_of(g_whiteSpace, startPos + 7);
+            // Get first string
+            endPos = m_configureFile.find_first_of(g_whiteSpace, startPos + 1);
+            const string configName = m_configureFile.substr(startPos, endPos - startPos);
+            // Get second string
+            startPos = m_configureFile.find_first_not_of(g_whiteSpace, endPos + 1);
+            endPos = m_configureFile.find_first_of(g_whiteSpace, startPos + 1);
+            string configValue = m_configureFile.substr(startPos, endPos - startPos);
+            // Check if the value is a variable
+            const uint startPos2 = configValue.find('$');
+            if (startPos2 != string::npos) {
+                // Check if it is a function call
+                if (configValue.at(startPos2 + 1) == '(') {
+                    endPos = m_configureFile.find(')', startPos);
+                    configValue = m_configureFile.substr(startPos, endPos - startPos + 1);
+                }
+                // Remove any quotes from the tag if there are any
+                const uint endPos2 =
+                    (configValue.at(configValue.length() - 1) == '"') ? configValue.length() - 1 : configValue.length();
+                // Find and replace the value
+                auto val = defaultValues.find(configValue.substr(startPos2, endPos2 - startPos2));
+                if (val == defaultValues.end()) {
+                    outputError("Unknown configuration operation found (" +
+                        configValue.substr(startPos2, endPos2 - startPos2) + ")");
+                    return false;
+                }
+                // Check if we need to add the quotes back
+                if (configValue.at(0) == '"') {
+                    // Replace the value with the default option in quotations
+                    configValue = '"' + val->second + '"';
+                } else {
+                    // Replace the value with the default option
+                    configValue = val->second;
+                }
             }
-            // Remove any quotes from the tag if there are any
-            const uint endPos2 =
-                (configValue.at(configValue.length() - 1) == '"') ? configValue.length() - 1 : configValue.length();
-            // Find and replace the value
-            auto val = defaultValues.find(configValue.substr(startPos2, endPos2 - startPos2));
-            if (val == defaultValues.end()) {
-                outputError("Unknown configuration operation found (" +
-                    configValue.substr(startPos2, endPos2 - startPos2) + ")");
-                return false;
-            }
-            // Check if we need to add the quotes back
-            if (configValue.at(0) == '"') {
-                // Replace the value with the default option in quotations
-                configValue = '"' + val->second + '"';
-            } else {
-                // Replace the value with the default option
-                configValue = val->second;
-            }
+
+            // Add to the list
+            m_fixedConfigValues.push_back(ConfigPair(configName, "", configValue));
+
+            // Find next
+            startPos = m_configureFile.find("#define", endPos + 1);
         }
 
-        // Add to the list
-        m_fixedConfigValues.push_back(ConfigPair(configName, "", configValue));
-
-        // Find next
-        startPos = m_configureFile.find("#define", endPos + 1);
-    }
-
-    // Find the end of this section
-    configEnd = m_configureFile.find("#endif", configEnd + 1);
-    if (configEnd == string::npos) {
-        outputError("Failed finding config.h header end");
-        return false;
-    }
-
-    // Get the additional config values
-    startPos = m_configureFile.find("print_config", endPos + 3);
-    while ((startPos != string::npos) && (startPos < configEnd)) {
-        // Add these to the config list
-        // Find prefix
-        startPos = m_configureFile.find_first_not_of(g_whiteSpace, startPos + 12);
-        endPos = m_configureFile.find_first_of(g_whiteSpace, startPos + 1);
-        string prefix = m_configureFile.substr(startPos, endPos - startPos);
-        // Skip unneeded var
-        startPos = m_configureFile.find_first_not_of(g_whiteSpace, endPos + 1);
-        endPos = m_configureFile.find_first_of(g_whiteSpace, startPos + 1);
-
-        // Find option list
-        startPos = m_configureFile.find_first_not_of(g_whiteSpace, endPos + 1);
-        endPos = m_configureFile.find_first_of(g_whiteSpace, startPos + 1);
-        string sList = m_configureFile.substr(startPos, endPos - startPos);
-        // Strip the variable prefix from start
-        sList.erase(0, 1);
-
-        // Create option list
-        if (!passConfigList(prefix, "", sList)) {
+        // Find the end of this section
+        configEnd = m_configureFile.find("#endif", configEnd + 1);
+        if (configEnd == string::npos) {
+            outputError("Failed finding config.h header end");
             return false;
         }
 
-        // Check if multiple lines
-        endPos = m_configureFile.find_first_not_of(g_whiteSpace, endPos + 1);
-        while (m_configureFile.at(endPos) == '\\') {
-            // Skip newline
-            ++endPos;
-            startPos = m_configureFile.find_first_not_of(" \t", endPos + 1);
-            // Check for blank line
-            if (m_configureFile.at(startPos) == '\n') {
-                break;
-            }
+        // Get the additional config values
+        startPos = m_configureFile.find("print_config", endPos + 3);
+        while ((startPos != string::npos) && (startPos < configEnd)) {
+            // Add these to the config list
+            // Find prefix
+            startPos = m_configureFile.find_first_not_of(g_whiteSpace, startPos + 12);
             endPos = m_configureFile.find_first_of(g_whiteSpace, startPos + 1);
-            string list = m_configureFile.substr(startPos, endPos - startPos);
+            string prefix = m_configureFile.substr(startPos, endPos - startPos);
+            // Skip unneeded var
+            startPos = m_configureFile.find_first_not_of(g_whiteSpace, endPos + 1);
+            endPos = m_configureFile.find_first_of(g_whiteSpace, startPos + 1);
+
+            // Find option list
+            startPos = m_configureFile.find_first_not_of(g_whiteSpace, endPos + 1);
+            endPos = m_configureFile.find_first_of(g_whiteSpace, startPos + 1);
+            string sList = m_configureFile.substr(startPos, endPos - startPos);
             // Strip the variable prefix from start
-            list.erase(0, 1);
+            sList.erase(0, 1);
 
             // Create option list
-            if (!passConfigList(prefix, "", list)) {
+            if (!passConfigList(prefix, "", sList)) {
                 return false;
             }
+
+            // Check if multiple lines
             endPos = m_configureFile.find_first_not_of(g_whiteSpace, endPos + 1);
+            while (m_configureFile.at(endPos) == '\\') {
+                // Skip newline
+                ++endPos;
+                startPos = m_configureFile.find_first_not_of(" \t", endPos + 1);
+                // Check for blank line
+                if (m_configureFile.at(startPos) == '\n') {
+                    break;
+                }
+                endPos = m_configureFile.find_first_of(g_whiteSpace, startPos + 1);
+                string list = m_configureFile.substr(startPos, endPos - startPos);
+                // Strip the variable prefix from start
+                list.erase(0, 1);
+
+                // Create option list
+                if (!passConfigList(prefix, "", list)) {
+                    return false;
+                }
+                endPos = m_configureFile.find_first_not_of(g_whiteSpace, endPos + 1);
+            }
+
+            // Get next
+            startPos = m_configureFile.find("print_config", startPos + 1);
         }
 
-        // Get next
-        startPos = m_configureFile.find("print_config", startPos + 1);
+        if (searches == 0) {
+            // Search for newer config_components.h
+            startPos = m_configureFile.find("#define FFMPEG_CONFIG_COMPONENTS_H");
+            if (startPos == string::npos) {
+                break;
+            }
+            // Move to end of header guard
+            startPos += 34;
+            // Set start of component section
+            m_configComponentsStart = m_configValues.size();
+        }
     }
     // Mark the end of the config list. Any elements added after this are considered temporary and should not be
     // exported
@@ -308,7 +317,7 @@ bool ConfigGenerator::passExistingConfig()
         }
 
         // Update intern value
-        fastToggleConfigValue(option, enable);
+        toggleConfigValue(option, enable);
 
         // Get next
         pos = configH.find("#define ", pos2 + 1);
@@ -355,7 +364,6 @@ bool ConfigGenerator::changeConfig(const string& option)
             "  --use-existing-config    use an existing config.h file found in rootdir, ignoring any other passed parameters affecting config");
         // Add in custom toolchain string
         outputLine("Toolchain options:");
-        outputLine("  --toolchain=NAME         set tool defaults according to NAME");
         outputLine("  --dce-only               do not output a project and only generate missing DCE files");
         outputLine(
             "  --use-yasm               use YASM instead of the default NASM (this is not advised as it does not support newer instructions)");
@@ -368,43 +376,7 @@ bool ConfigGenerator::changeConfig(const string& option)
         }
         return false;
     }
-    if (option.find("--toolchain") == 0) {
-        // Check for correct command syntax
-        if (option.at(11) != '=') {
-            outputError("Incorrect toolchain syntax (" + option + ")");
-            outputError("Excepted syntax (--toolchain=NAME)", false);
-            return false;
-        }
-        // A tool chain has been specified
-        string toolChain = option.substr(12);
-        if (toolChain == "msvc") {
-            // Don't disable inline as the configure header will auto header guard it out anyway. This allows for
-            // changing on the fly afterwards
-        } else if (toolChain == "icl") {
-            // Inline asm by default is turned on if icl is detected
-        } else {
-#ifdef _MSC_VER
-            // Only support msvc when built with msvc
-            outputError("Unknown toolchain option (" + toolChain + ")");
-            outputError("Excepted toolchains (msvc, icl)", false);
-            return false;
-#else
-            // Only support other toolchains if DCE only
-            if (!m_onlyDCE) {
-                outputError("Unknown toolchain option (" + sToolChain + ")");
-                outputError("Other toolchains are only supported if --dce-only has already been specified.", false);
-                return false;
-            } else {
-                if ((toolChain.find("mingw") == string::npos) && (toolChain.find("gcc") == string::npos)) {
-                    outputError("Unknown toolchain option (" + toolChain + ")");
-                    outputError("Excepted toolchains (mingw*, gcc*)", false);
-                    return false;
-                }
-            }
-#endif
-        }
-        m_toolchain = toolChain;
-    } else if (option.find("--prefix") == 0) {
+    if (option.find("--prefix") == 0) {
         // Check for correct command syntax
         if (option.at(8) != '=') {
             outputError("Incorrect prefix syntax (" + option + ")");
@@ -516,7 +488,7 @@ bool ConfigGenerator::changeConfig(const string& option)
             // Find remainder of option
             option2 = option.substr(10);
         } else {
-            outputError("Unknown command line option (" + option2 + ")");
+            outputError("Unknown command line option (" + option + ")");
             outputError("Use --help to get available options", false);
             return false;
         }
@@ -545,9 +517,9 @@ bool ConfigGenerator::changeConfig(const string& option)
                 outputError("Use --help to get available options", false);
                 return false;
             }
-            toggleConfigValue(option2, enable);
+            toggleConfigValue(option2, enable, false, true);
             // Enable parent list
-            fastToggleConfigValue(list + 's', true);
+            toggleConfigValue(list + 's', true);
         } else {
             // Check for changes to entire list
             if (option2 == "devices") {
@@ -557,7 +529,7 @@ bool ConfigGenerator::changeConfig(const string& option)
                     return false;
                 }
                 for (const auto& i : list) {
-                    toggleConfigValue(i, enable);
+                    toggleConfigValue(i, enable, false, true);
                 }
                 // Change OUTDEV_LIST
                 list.resize(0);
@@ -565,7 +537,7 @@ bool ConfigGenerator::changeConfig(const string& option)
                     return false;
                 }
                 for (const auto& i : list) {
-                    toggleConfigValue(i, enable);
+                    toggleConfigValue(i, enable, false, true);
                 }
             } else if (option2 == "programs") {
                 // Change PROGRAM_LIST
@@ -574,7 +546,7 @@ bool ConfigGenerator::changeConfig(const string& option)
                     return false;
                 }
                 for (const auto& i : list) {
-                    toggleConfigValue(i, enable);
+                    toggleConfigValue(i, enable, false, true);
                 }
             } else if (option2 == "everything") {
                 // Change ALL_COMPONENTS
@@ -583,7 +555,7 @@ bool ConfigGenerator::changeConfig(const string& option)
                     return false;
                 }
                 for (const auto& i : list) {
-                    toggleConfigValue(i, enable);
+                    toggleConfigValue(i, enable, false, true);
                 }
             } else if (option2 == "all") {
                 // Change ALL_COMPONENTS
@@ -592,7 +564,7 @@ bool ConfigGenerator::changeConfig(const string& option)
                     return false;
                 }
                 for (const auto& i : list) {
-                    toggleConfigValue(i, enable);
+                    toggleConfigValue(i, enable, false, true);
                 }
                 // Change LIBRARY_LIST
                 list.resize(0);
@@ -600,7 +572,7 @@ bool ConfigGenerator::changeConfig(const string& option)
                     return false;
                 }
                 for (const auto& i : list) {
-                    toggleConfigValue(i, enable);
+                    toggleConfigValue(i, enable, false, true);
                 }
                 // Change PROGRAM_LIST
                 list.resize(0);
@@ -608,7 +580,7 @@ bool ConfigGenerator::changeConfig(const string& option)
                     return false;
                 }
                 for (const auto& i : list) {
-                    toggleConfigValue(i, enable);
+                    toggleConfigValue(i, enable, false, true);
                 }
             } else if (option2 == "autodetect") {
                 // Change AUTODETECT_LIBS
@@ -617,8 +589,9 @@ bool ConfigGenerator::changeConfig(const string& option)
                     return false;
                 }
                 for (const auto& i : list) {
-                    toggleConfigValue(i, enable);
+                    toggleConfigValue(i, enable, true);
                 }
+                toggleConfigValue(option2, enable);
             } else {
                 // Check if the option is a component
                 vector<string> list;
@@ -631,7 +604,7 @@ bool ConfigGenerator::changeConfig(const string& option)
                     transform(option3.begin(), option3.end(), option3.begin(), ::toupper);
                     getConfigList(option3 + "_LIST", list);
                     for (const auto& i : list) {
-                        toggleConfigValue(i, enable);
+                        toggleConfigValue(i, enable, false, true);
                     }
                 } else {
                     // If not one of above components then check if it exists as standalone option
@@ -654,11 +627,11 @@ bool ConfigGenerator::changeConfig(const string& option)
                         transform(option3.begin(), option3.end(), option3.begin(), ::toupper);
                         getConfigList(option3 + "_LIST", list2);
                         for (const auto& j : list) {
-                            toggleConfigValue(j, enable);
+                            toggleConfigValue(j, enable, false, true);
                         }
                     }
                 }
-                toggleConfigValue(option2, enable);
+                toggleConfigValue(option2, enable, false, true);
             }
         }
     }
@@ -729,6 +702,15 @@ bool ConfigGenerator::passCurrentValues()
             return false;
         }
     }
+    // Check for any still unset values
+    option = m_configValues.begin();
+    for (; option < m_configValues.end(); ++option) {
+        // If still not set then disable
+        if (option->m_value.empty()) {
+            option->m_value = "0";
+        }
+    }
+
 #if defined(OPTIMISE_ENCODERS) || defined(OPTIMISE_DECODERS)
     // Optimise the config values. Based on user input different encoders/decoder can be disabled as there are now
     // better inbuilt alternatives
@@ -874,20 +856,21 @@ bool ConfigGenerator::outputConfig()
     string configureFileASM = header2 + '\n';
 
     // Output all internal options
-    for (const auto& i : m_configValues) {
-        string sTagName = i.m_prefix + i.m_option;
+    auto endConfig = (m_configComponentsStart > 0) ? m_configComponentsStart : m_configValuesEnd;
+    for (auto i = m_configValues.begin(); i < m_configValues.begin() + endConfig; ++i) {
+        string sTagName = i->m_prefix + i->m_option;
         // Check for forced replacement (only if attribute is not disabled)
         string addConfig;
-        if ((i.m_value != "0") && (m_replaceList.find(sTagName) != m_replaceList.end())) {
+        if ((i->m_value != "0") && (m_replaceList.find(sTagName) != m_replaceList.end())) {
             addConfig = m_replaceList[sTagName];
         } else {
-            addConfig = "#define " + sTagName + ' ' + i.m_value;
+            addConfig = "#define " + sTagName + ' ' + i->m_value;
         }
         configureFile += addConfig + '\n';
-        if ((i.m_value != "0") && (m_replaceListASM.find(sTagName) != m_replaceListASM.end())) {
+        if ((i->m_value != "0") && (m_replaceListASM.find(sTagName) != m_replaceListASM.end())) {
             configureFileASM += m_replaceListASM[sTagName] + '\n';
         } else {
-            configureFileASM += "%define " + sTagName + ' ' + i.m_value + '\n';
+            configureFileASM += "%define " + sTagName + ' ' + i->m_value + '\n';
         }
     }
 
@@ -903,6 +886,35 @@ bool ConfigGenerator::outputConfig()
     if (!writeToFile(configFile, configureFileASM)) {
         outputError("Failed opening output asm configure file (" + configFile + ")");
         return false;
+    }
+
+    if (m_configComponentsStart > 0) {
+        // Output config_components.h
+        outputLine("  Outputting config_components.h...");
+        string componentsFile = fileHeader;
+        componentsFile += "\n#ifndef FFMPEG_CONFIG_COMPONENTS_H\n";
+        componentsFile += "#define FFMPEG_CONFIG_COMPONENTS_H\n";
+        componentsFile += "#include \"config.h\"\n";
+        for (auto i = m_configValues.begin() + m_configComponentsStart; i < m_configValues.begin() + m_configValuesEnd;
+             ++i) {
+            string sTagName = i->m_prefix + i->m_option;
+            // Check for forced replacement (only if attribute is not disabled)
+            string addConfig;
+            if ((i->m_value != "0") && (m_replaceList.find(sTagName) != m_replaceList.end())) {
+                addConfig = m_replaceList[sTagName];
+            } else {
+                addConfig = "#define " + sTagName + ' ' + i->m_value;
+            }
+            componentsFile += addConfig + '\n';
+        }
+        // Output end header guard
+        componentsFile += "#endif /* FFMPEG_CONFIG_COMPONENTS_H */\n";
+        // Write output files
+        configFile = m_solutionDirectory + "config_components.h";
+        if (!writeToFile(configFile, componentsFile)) {
+            outputError("Failed opening output configure file (" + configFile + ")");
+            return false;
+        }
     }
 
     // Output avconfig.h
@@ -1032,9 +1044,12 @@ void ConfigGenerator::makeFileGeneratorRelative(const string& fileName, string& 
         path = fileName.substr(0, pos);
         file = fileName.substr(pos);
     }
-    makePathsRelative(m_solutionDirectory + path, "./", retFileName);
+    if (path != m_solutionDirectory) {
+        path = m_solutionDirectory + path;
+    }
+    makePathsRelative(path, "./", retFileName);
     // Check if relative to current dir
-    if (retFileName.find("./") == 0) {
+    if (retFileName.length() > 2 && retFileName.find("./") == 0) {
         retFileName = retFileName.substr(2);
     }
     retFileName += file;
@@ -1561,6 +1576,12 @@ bool ConfigGenerator::passEnabledComponents(
     output += getCopywriteHeader("Available items from " + nameNice);
     output += '\n';
 
+    // Output includes
+    output += "#include \"config.h\"\n";
+    if (m_configComponentsStart > 0) {
+        output += "#include \"config_components.h\"\n";
+    }
+
     // Output header
     output += "static const " + structName + " *" + name + "[] = {\n";
 
@@ -1579,6 +1600,10 @@ bool ConfigGenerator::passEnabledComponents(
     }
     for (const auto& i : configList) {
         auto option = getConfigOption(i);
+        if (option == m_configValues.end()) {
+            outputError("Unknown config option (" + i + ") found in component list (" + list + ")");
+            continue;
+        }
         if (option->m_value == "1") {
             string optionLower = option->m_option;
             transform(optionLower.begin(), optionLower.end(), optionLower.begin(), ::tolower);
@@ -1648,7 +1673,8 @@ bool ConfigGenerator::fastToggleConfigValue(const string& option, const bool ena
     return bRet;
 }
 
-bool ConfigGenerator::toggleConfigValue(const string& option, const bool enable, const bool weak, const bool recursive)
+bool ConfigGenerator::toggleConfigValue(
+    const string& option, const bool enable, const bool weak, const bool deep, const bool recursive)
 {
     string optionUpper = option; // Ensure it is in upper case
     transform(optionUpper.begin(), optionUpper.end(), optionUpper.begin(), ::toupper);
@@ -1659,26 +1685,32 @@ bool ConfigGenerator::toggleConfigValue(const string& option, const bool enable,
         if (i.m_option == optionUpper) {
             ret = true;
             if (!i.m_lock) {
+                // Skip weak setting an already configured value
+                if (!!(weak && !i.m_value.empty())) {
+                    continue;
+                }
                 // Lock the item to prevent cyclic conditions
                 i.m_lock = true;
                 // Need to convert the name to lower case
                 string optionLower = option;
                 transform(optionLower.begin(), optionLower.end(), optionLower.begin(), ::tolower);
                 if (enable) {
-                    string checkFunc = optionLower + "_select";
-                    vector<string> checkList;
-                    if (getConfigList(checkFunc, checkList, false)) {
-                        for (const auto& j : checkList) {
-                            toggleConfigValue(j, true, weak, true);
+                    if (deep) {
+                        string checkFunc = optionLower + "_select";
+                        vector<string> checkList;
+                        if (getConfigList(checkFunc, checkList, false)) {
+                            for (const auto& j : checkList) {
+                                toggleConfigValue(j, true, weak, true);
+                            }
                         }
-                    }
 
-                    // If enabled then all of these should then be enabled if not already disabled
-                    checkFunc = optionLower + "_suggest";
-                    checkList.resize(0);
-                    if (getConfigList(checkFunc, checkList, false)) {
-                        for (const auto& j : checkList) {
-                            toggleConfigValue(j, true, true, true);
+                        // If enabled then all of these should then be enabled if not already disabled
+                        checkFunc = optionLower + "_suggest";
+                        checkList.resize(0);
+                        if (getConfigList(checkFunc, checkList, false)) {
+                            for (const auto& j : checkList) {
+                                toggleConfigValue(j, true, true, true);
+                            }
                         }
                     }
 
@@ -1903,7 +1935,7 @@ bool ConfigGenerator::passDependencyCheck(const ValuesList::iterator& option)
                 }
                 if (enabled) {
                     // If any deps are enabled then enable
-                    fastToggleConfigValue(optionLower, true, true);
+                    toggleConfigValue(optionLower, true, true);
                     break;
                 }
             }
@@ -1947,7 +1979,7 @@ bool ConfigGenerator::passDependencyCheck(const ValuesList::iterator& option)
             }
             if (allEnabled) {
                 // If all deps are enabled then enable
-                fastToggleConfigValue(optionLower, true, true);
+                toggleConfigValue(optionLower, true, true);
             }
         }
     }
@@ -2097,8 +2129,7 @@ bool ConfigGenerator::passDependencyCheck(const ValuesList::iterator& option)
                     auto dep = additionalDependencies.find(i);
                     if (dep == additionalDependencies.end()) {
                         outputInfo("Unknown option in select dependency (" + i + ") for option (" + optionLower + ")");
-                    }
-                    if (!dep->second) {
+                    } else if (!dep->second) {
                         // If any deps are disabled then disable
                         toggleConfigValue(optionLower, false);
                         outputInfo(
@@ -2127,10 +2158,7 @@ bool ConfigGenerator::passDependencyCheck(const ValuesList::iterator& option)
     if (option->m_value == "1") {
         // Perform a deep enable
         fastToggleConfigValue(optionLower, false);
-        toggleConfigValue(optionLower, true);
-    } else {
-        // Ensure the option is not in an uninitialised state
-        toggleConfigValue(optionLower, false);
+        toggleConfigValue(optionLower, true, false, true);
     }
     return true;
 }

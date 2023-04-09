@@ -31,13 +31,32 @@ class ProjectGenerator
 private:
     using StaticList = vector<string>;
     using UnknownList = map<string, StaticList>;
+    struct ConfigConds
+    {
+        bool isStatic = false;
+        bool isShared = false;
+        bool is32 = false;
+        bool is64 = false;
+
+        ConfigConds(bool istatic, bool ishared, bool i32, bool i64)
+            : isStatic(istatic)
+            , isShared(ishared)
+            , is32(i32)
+            , is64(i64)
+        {}
+    };
+    using ConditionalList = map<string, ConfigConds>;
     ifstream m_inputFile;
     string m_inLine;
     StaticList m_includes;
     StaticList m_includesCPP;
     StaticList m_includesC;
     StaticList m_includesASM;
+    ConditionalList m_includesConditionalCPP;
+    ConditionalList m_includesConditionalC;
+    ConditionalList m_includesConditionalASM;
     StaticList m_includesH;
+    StaticList m_includesRC;
     StaticList m_includesCU;
     UnknownList m_replaceIncludes;
     StaticList m_libs;
@@ -105,42 +124,68 @@ private:
     bool passDynamicInclude(uint length, StaticList& includes);
 
     /**
-     * Pass a static source include line from current makefile.
+     * Pass a static source include line from current makefile that is wrapped in a reserved conditional.
+     * @param condition The pre-processor condition applied to the current line.
+     * @param list      The file list to add any found files to when the condition evaluates to 'true'.
+     * @param replace   The file list to add any found files to when the condition is a reserved value.
+     * @param offset    The offset to start passing (used to separate different file tags).
      * @return True if it succeeds, false if it fails.
      */
-    bool passCInclude();
+    bool passCondition(const string& condition, StaticList& list, UnknownList& replace, uint offset = 0);
+
+    /**
+     * Pass a dynamic source include line from current makefile that is wrapped in a reserved conditional.
+     * @param condition The pre-processor condition applied to the current line.
+     * @param list      The file list to add any found files to when the condition evaluates to 'true'.
+     * @param replace   The file list to add any found files to when the condition is a reserved value.
+     * @param offset    The offset to start passing (used to separate different file tags).
+     * @return True if it succeeds, false if it fails.
+     */
+    bool passDCondition(const string& condition, StaticList& list, UnknownList& replace, uint offset = 0);
+
+    /**
+     * Pass a static source include line from current makefile.
+     * @param condition (Optional) The pre-processor condition applied to the current line.
+     * @return True if it succeeds, false if it fails.
+     */
+    bool passCInclude(const string& condition = "");
 
     /**
      * Pass a dynamic source include line from current makefile.
+     * @param condition (Optional) The pre-processor condition applied to the current line.
      * @return True if it succeeds, false if it fails.
      */
-    bool passDCInclude();
+    bool passDCInclude(const string& condition = "");
 
     /**
      * Pass a static asm include line from current makefile.
      * @param offset The offset to start passing (used to separate old yasm and x86asm).
+     * @param condition (Optional) The pre-processor condition applied to the current line.
      * @return True if it succeeds, false if it fails.
      */
-    bool passASMInclude(uint offset);
+    bool passASMInclude(uint offset, const string& condition = "");
 
     /**
      * Pass a dynamic asm include line from current makefile.
      * @param offset The offset to start passing (used to separate old yasm and x86asm).
+     * @param condition (Optional) The pre-processor condition applied to the current line.
      * @return True if it succeeds, false if it fails.
      */
-    bool passDASMInclude(uint offset);
+    bool passDASMInclude(uint offset, const string& condition = "");
 
     /**
      * Pass a static mmx include line from current makefile.
+     * @param condition (Optional) The pre-processor condition applied to the current line.
      * @return True if it succeeds, false if it fails.
      */
-    bool passMMXInclude();
+    bool passMMXInclude(const string& condition = "");
 
     /**
      * Pass a dynamic mmx include line from current makefile.
+     * @param condition (Optional) The pre-processor condition applied to the current line.
      * @return True if it succeeds, false if it fails.
      */
-    bool passDMMXInclude();
+    bool passDMMXInclude(const string& condition = "");
 
     /**
      * Pass a static header include line from current makefile.
@@ -179,6 +224,30 @@ private:
     bool passDLibUnknown();
 
     /**
+     * Pass a shared only dynamic source include line from current makefile.
+     * @return True if it succeeds, false if it fails.
+     */
+    bool passSharedDCInclude();
+
+    /**
+     * Pass a shared only source include line from current makefile.
+     * @return True if it succeeds, false if it fails.
+     */
+    bool passSharedCInclude();
+
+    /**
+     * Pass a static only dynamic source include line from current makefile.
+     * @return True if it succeeds, false if it fails.
+     */
+    bool passStaticDCInclude();
+
+    /**
+     * Pass a static only source include line from current makefile.
+     * @return True if it succeeds, false if it fails.
+     */
+    bool passStaticCInclude();
+
+    /**
      * Passes the makefile for the current project directory.
      * @return True if it succeeds, false if it fails.
      */
@@ -213,17 +282,16 @@ private:
 
     void buildInterDependencies(StaticList& libs);
 
-    void buildDependencies(StaticList& libs, StaticList& addLibs);
-
     /**
-     * Updates existing library dependency lists by adding/removing those required/unavailable by WinRT.
+     * Gets library dependency lists.
      * @param [in,out] libs    The project dependency libs.
      * @param [in,out] addLibs The windows dependency libs.
+     * @param          winrt   True if checking for winrt.
      */
-    void buildDependenciesWinRT(StaticList& libs, StaticList& addLibs);
+    void buildDependencies(StaticList& libs, StaticList& addLibs, bool winrt);
 
     void buildDependencyValues(StaticList& includeDirs, StaticList& lib32Dirs, StaticList& lib64Dirs,
-        StaticList& definesShared, StaticList& definesStatic) const;
+        StaticList& definesShared, StaticList& definesStatic, bool winrt) const;
 
     void buildProjectDependencies(map<string, bool>& projectDeps) const;
 
@@ -249,16 +317,35 @@ private:
 
     bool checkProjectFiles();
 
-    bool createReplaceFiles(const StaticList& replaceIncludes, StaticList& existingIncludes);
+    /**
+     * Builds '_wrap' files to wrap source files in a conditional compilation statement.
+     * @param replaceIncludes              The list of files to scan.
+     * @param [in,out] existingIncludes    The list of existing processed files.
+     * @param [in,out] conditionalIncludes The list of existing conditional files.
+     */
+    bool createReplaceFiles(
+        const StaticList& replaceIncludes, StaticList& existingIncludes, ConditionalList& conditionalIncludes);
 
     bool findProjectFiles(const StaticList& includes, StaticList& includesC, StaticList& includesCPP,
-        StaticList& includesASM, StaticList& includesH, StaticList& includesCU) const;
+        StaticList& includesASM, StaticList& includesH, StaticList& includesRC, StaticList& includesCU) const;
 
-    void outputTemplateTags(string& projectTemplate, string& filtersTemplate) const;
+    /**
+     * Replace occurrences of known tags in string.
+     * @param [in,out] projectTemplate The project file in string form.
+     * @param          winrt           Whether this is a winrt project file.
+     */
+    void outputTemplateTags(string& projectTemplate, bool winrt = false) const;
+
+    /**
+     * Replace occurrences of features in a props file.
+     * @param [in,out] projectTemplate The project file in string form.
+     */
+    void outputPropsTags(string& projectTemplate) const;
 
     void outputSourceFileType(StaticList& fileList, const string& type, const string& filterType,
         string& projectTemplate, string& filterTemplate, StaticList& foundObjects, set<string>& foundFilters,
-        bool checkExisting, bool staticOnly = false, bool sharedOnly = false) const;
+        bool checkExisting, bool staticOnly = false, bool sharedOnly = false, bool bit32Only = false,
+        bool bit64Only = false) const;
 
     void outputSourceFiles(string& projectTemplate, string& filterTemplate);
 
@@ -341,19 +428,7 @@ private:
      */
     void outputCUDATools(string& projectTemplate) const;
 
-    bool outputDependencyLibs(string& projectTemplate, bool program = false);
-
-    /**
-     * Removes any WinRT/UWP configurations from the output project template.
-     * @param [in,out] projectTemplate The project template.
-     */
-    static void outputStripWinRT(string& projectTemplate);
-
-    /**
-     * Removes any WinRT/UWP configurations from the output solution template.
-     * @param [in,out] solutionFile The solution template.
-     */
-    static void outputStripWinRTSolution(string& solutionFile);
+    bool outputDependencyLibs(string& projectTemplate, bool winrt, bool program);
 
     /**
      * Search through files in the current project and finds any undefined elements that are used in DCE blocks. A new

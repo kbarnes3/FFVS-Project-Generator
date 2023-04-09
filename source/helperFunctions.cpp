@@ -31,31 +31,38 @@
 #    include <Windows.h>
 #else
 #    include <dirent.h>
-extern char _binary_compat_h_start[];
-extern char _binary_compat_h_end[];
-extern char _binary_math_h_start[];
-extern char _binary_math_h_end[];
-extern char _binary_unistd_h_start[];
-extern char _binary_unistd_h_end[];
-extern char _binary_template_in_sln_start[];
-extern char _binary_template_in_sln_end[];
-extern char _binary_template_in_vcxproj_start[];
-extern char _binary_template_in_vcxproj_end[];
-extern char _binary_template_in_vcxproj_filters_start[];
-extern char _binary_template_in_vcxproj_filters_end[];
-extern char _binary_templateprogram_in_vcxproj_start[];
-extern char _binary_templateprogram_in_vcxproj_end[];
-extern char _binary_templateprogram_in_vcxproj_filters_start[];
-extern char _binary_templateprogram_in_vcxproj_filters_end[];
-extern char _binary_stdatomic_h_start[];
-extern char _binary_stdatomic_h_end[];
-const char* pp_cStartArray[] = {_binary_compat_h_start, _binary_math_h_start, _binary_unistd_h_start,
-    _binary_template_in_sln_start, _binary_template_in_vcxproj_start, _binary_template_in_vcxproj_filters_start,
-    _binary_templateprogram_in_vcxproj_start, _binary_templateprogram_in_vcxproj_filters_start,
-    _binary_stdatomic_h_start};
-const char* pp_cEndArray[] = {_binary_compat_h_end, _binary_math_h_end, _binary_unistd_h_end,
-    _binary_template_in_sln_end, _binary_template_in_vcxproj_end, _binary_template_in_vcxproj_filters_end,
-    _binary_templateprogram_in_vcxproj_end, _binary_templateprogram_in_vcxproj_filters_end, _binary_stdatomic_h_end};
+extern char _binary_template_sln_winrt_start[];
+extern char _binary_template_sln_winrt_end[];
+extern char _binary_template_vcxproj_start[];
+extern char _binary_template_vcxproj_end[];
+extern char _binary_template_vcxproj_filters_start[];
+extern char _binary_template_vcxproj_filters_end[];
+extern char _binary_template_program_vcxproj_start[];
+extern char _binary_template_program_vcxproj_end[];
+extern char _binary_template_program_vcxproj_filters_start[];
+extern char _binary_template_program_vcxproj_filters_end[];
+extern char _binary_template_bat_start[];
+extern char _binary_template_bat_end[];
+extern char _binary_template_vcxproj_winrt_start[];
+extern char _binary_template_vcxproj_winrt_end[];
+extern char _binary_template_props_start[];
+extern char _binary_template_props_end[];
+extern char _binary_template_props_winrt_start[];
+extern char _binary_template_props_winrt_end[];
+extern char _binary_template_file_props_start[];
+extern char _binary_template_file_props_end[];
+extern char _binary_template_sln_nowinrt_start[];
+extern char _binary_template_sln_nowinrt_end[];
+const char* pp_cStartArray[] = {_binary_template_sln_winrt_start, _binary_template_vcxproj_start,
+    _binary_template_vcxproj_filters_start, _binary_template_program_vcxproj_start,
+    _binary_template_program_vcxproj_filters_start, _binary_template_bat_start, _binary_template_vcxproj_winrt_start,
+    _binary_template_props_start, _binary_template_props_winrt_start, _binary_template_file_props_start,
+    _binary_template_sln_nowinrt_start};
+const char* pp_cEndArray[] = {_binary_template_sln_winrt_end, _binary_template_vcxproj_end,
+    _binary_template_vcxproj_filters_end, _binary_template_program_vcxproj_end,
+    _binary_template_program_vcxproj_filters_end, _binary_template_bat_end, _binary_template_vcxproj_winrt_end,
+    _binary_template_props_end, _binary_template_props_winrt_end, _binary_template_file_props_end,
+    _binary_template_sln_nowinrt_end};
 #endif
 
 #if _DEBUG
@@ -93,11 +100,11 @@ bool loadFromResourceFile(const int resourceID, string& retString)
 {
 #ifdef _WIN32
     // Can load directly from windows resource file
-    HINSTANCE hInst = GetModuleHandle(nullptr);
-    HRSRC hRes = FindResource(hInst, MAKEINTRESOURCE(resourceID), RT_RCDATA);
-    HGLOBAL hMem = LoadResource(hInst, hRes);
-    DWORD size = SizeofResource(hInst, hRes);
-    char* resText = static_cast<char*>(LockResource(hMem));
+    const HINSTANCE hInst = GetModuleHandleA(nullptr);
+    const HRSRC hRes = FindResourceA(hInst, MAKEINTRESOURCE(resourceID), RT_RCDATA);
+    const HGLOBAL hMem = LoadResource(hInst, hRes);
+    const DWORD size = SizeofResource(hInst, hRes);
+    const char* resText = static_cast<char*>(LockResource(hMem));
 
     // Copy across the file
     retString.reserve(size);
@@ -147,11 +154,11 @@ bool copyResourceFile(const int resourceID, const string& destinationFile, const
 {
 #ifdef _WIN32
     // Can load directly from windows resource file
-    HINSTANCE hInst = GetModuleHandle(nullptr);
-    HRSRC hRes = FindResource(hInst, MAKEINTRESOURCE(resourceID), RT_RCDATA);
-    HGLOBAL hMem = LoadResource(hInst, hRes);
+    const HINSTANCE hInst = GetModuleHandleA(nullptr);
+    const HRSRC hRes = FindResourceA(hInst, MAKEINTRESOURCE(resourceID), RT_RCDATA);
+    const HGLOBAL hMem = LoadResource(hInst, hRes);
     DWORD size = SizeofResource(hInst, hRes);
-    char* resText = static_cast<char*>(LockResource(hMem));
+    const char* resText = static_cast<char*>(LockResource(hMem));
 
     // Copy across the file
     ofstream dest(destinationFile, (binary) ? ios_base::out | ios_base::binary : ios_base::out);
@@ -188,7 +195,7 @@ bool copyResourceFile(const int resourceID, const string& destinationFile, const
 void deleteFile(const string& destinationFile)
 {
 #ifdef _WIN32
-    DeleteFile(destinationFile.c_str());
+    DeleteFileA(destinationFile.c_str());
 #else
     remove(destinationFile.c_str());
 #endif
@@ -197,9 +204,9 @@ void deleteFile(const string& destinationFile)
 void deleteFolder(const string& destinationFolder)
 {
 #ifdef _WIN32
-    string delFolder = destinationFolder + '\0';
+    const string delFolder = destinationFolder + '\0';
     SHFILEOPSTRUCT file_op = {NULL, FO_DELETE, delFolder.c_str(), "", FOF_NO_UI, false, 0, ""};
-    SHFileOperation(&file_op);
+    SHFileOperationA(&file_op);
 #else
     DIR* p_Dir = opendir(destinationFolder.c_str());
     size_t path_len = strlen(destinationFolder.c_str());
@@ -239,7 +246,7 @@ void deleteFolder(const string& destinationFolder)
 bool isFolderEmpty(const string& folder)
 {
 #ifdef _WIN32
-    return PathIsDirectoryEmpty(folder.c_str());
+    return PathIsDirectoryEmptyA(folder.c_str()) == TRUE;
 #else
     DIR* dir = opendir(folder.c_str());
     if (dir == NULL) {
@@ -261,7 +268,7 @@ bool isFolderEmpty(const string& folder)
 bool copyFile(const string& sourceFolder, const string& destinationFolder)
 {
 #ifdef _WIN32
-    return (CopyFile(sourceFolder.c_str(), destinationFolder.c_str(), false) != 0);
+    return (CopyFileA(sourceFolder.c_str(), destinationFolder.c_str(), false) != 0);
 #else
     FILE* p_Source = fopen(sourceFolder.c_str(), "rb");
     if (p_Source == NULL)
@@ -343,7 +350,7 @@ bool findFile(const string& fileName, string& retFileName)
 {
 #ifdef _WIN32
     WIN32_FIND_DATA searchFile;
-    HANDLE searchHandle = FindFirstFile(fileName.c_str(), &searchFile);
+    const HANDLE searchHandle = FindFirstFileA(fileName.c_str(), &searchFile);
     if (searchHandle != INVALID_HANDLE_VALUE) {
         // Update the return filename
         retFileName = searchFile.cFileName;
@@ -388,7 +395,7 @@ bool findFiles(const string& fileSearch, vector<string>& retFiles, const bool re
     }
     // Search all sub directories as well
     if (recursive) {
-        string search = path + "*";
+        const string search = path + "*";
         searchHandle = FindFirstFile(search.c_str(), &searchFile);
         if (searchHandle != INVALID_HANDLE_VALUE) {
             BOOL cont = TRUE;
@@ -436,11 +443,11 @@ bool findFolders(const string& folderSearch, vector<string>& retFolders, const b
         path = folderSearch.substr(0, pos);
         searchTerm = folderSearch.substr(pos);
     }
-    HANDLE searchHandle = FindFirstFile(folderSearch.c_str(), &searchFile);
+    HANDLE searchHandle = FindFirstFileA(folderSearch.c_str(), &searchFile);
     if (searchHandle != INVALID_HANDLE_VALUE) {
         // Update the return filename list
         retFolders.push_back(path + searchFile.cFileName);
-        while (FindNextFile(searchHandle, &searchFile) != 0) {
+        while (FindNextFileA(searchHandle, &searchFile) != 0) {
             if (searchFile.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) {
                 retFolders.push_back(path + searchFile.cFileName);
                 replace(retFolders.back().begin(), retFolders.back().end(), '\\', '/');
@@ -450,8 +457,8 @@ bool findFolders(const string& folderSearch, vector<string>& retFolders, const b
     }
     // Search all sub directories as well
     if (recursive) {
-        string search = path + "*";
-        searchHandle = FindFirstFile(search.c_str(), &searchFile);
+        const string search = path + "*";
+        searchHandle = FindFirstFileA(search.c_str(), &searchFile);
         if (searchHandle != INVALID_HANDLE_VALUE) {
             BOOL cont = TRUE;
             while (cont == TRUE) {
@@ -462,7 +469,7 @@ bool findFolders(const string& folderSearch, vector<string>& retFolders, const b
                         findFolders(newPath, retFolders);
                     }
                 }
-                cont = FindNextFile(searchHandle, &searchFile);
+                cont = FindNextFileA(searchHandle, &searchFile);
             }
             FindClose(searchHandle);
         }
@@ -490,16 +497,16 @@ void makePathsRelative(const string& path, const string& makeRelativeTo, string&
     fromT.reserve(MAX_PATH);
     toT.reserve(MAX_PATH);
     if (path.length() > 0) {
-        GetFullPathName(path.c_str(), MAX_PATH, const_cast<char*>(fromT.data()), NULL);
+        GetFullPathNameA(path.c_str(), MAX_PATH, const_cast<char*>(fromT.data()), NULL);
     } else {
-        GetFullPathName("./", MAX_PATH, const_cast<char*>(fromT.data()), NULL);
+        GetFullPathNameA("./", MAX_PATH, const_cast<char*>(fromT.data()), NULL);
     }
     if (makeRelativeTo.length() > 0) {
-        GetFullPathName(makeRelativeTo.c_str(), MAX_PATH, const_cast<char*>(toT.data()), NULL);
+        GetFullPathNameA(makeRelativeTo.c_str(), MAX_PATH, const_cast<char*>(toT.data()), NULL);
     } else {
-        GetFullPathName("./", MAX_PATH, const_cast<char*>(toT.data()), NULL);
+        GetFullPathNameA("./", MAX_PATH, const_cast<char*>(toT.data()), NULL);
     }
-    PathRelativePathTo(
+    PathRelativePathToA(
         const_cast<char*>(retPath.data()), toT.c_str(), FILE_ATTRIBUTE_DIRECTORY, fromT.c_str(), FILE_ATTRIBUTE_NORMAL);
     retPath.resize(strlen(retPath.c_str()));
     replace(retPath.begin(), retPath.end(), '\\', '/');
@@ -561,7 +568,7 @@ void findAndReplace(string& inString, const string& search, const string& replac
 bool findEnvironmentVariable(const string& envVar)
 {
 #ifdef _WIN32
-    return (GetEnvironmentVariable(envVar.c_str(), NULL, 0) > 0);
+    return (GetEnvironmentVariableA(envVar.c_str(), NULL, 0) > 0);
 #else
     return false;
 #endif
@@ -584,7 +591,7 @@ void outputLine(const string& message)
 void outputInfo(const string& message, const bool header)
 {
 #if _WIN32
-    HANDLE hstdout = GetStdHandle(STD_OUTPUT_HANDLE);
+    const HANDLE hstdout = GetStdHandle(STD_OUTPUT_HANDLE);
     CONSOLE_SCREEN_BUFFER_INFO csbi;
     GetConsoleScreenBufferInfo(hstdout, &csbi);
     SetConsoleTextAttribute(hstdout, FOREGROUND_GREEN);
@@ -605,7 +612,7 @@ void outputInfo(const string& message, const bool header)
 void outputWarning(const string& message, const bool header)
 {
 #if _WIN32
-    HANDLE hstdout = GetStdHandle(STD_OUTPUT_HANDLE);
+    const HANDLE hstdout = GetStdHandle(STD_OUTPUT_HANDLE);
     CONSOLE_SCREEN_BUFFER_INFO csbi;
     GetConsoleScreenBufferInfo(hstdout, &csbi);
     SetConsoleTextAttribute(hstdout, FOREGROUND_RED | FOREGROUND_GREEN);
@@ -626,7 +633,7 @@ void outputWarning(const string& message, const bool header)
 void outputError(const string& message, const bool header)
 {
 #if _WIN32
-    HANDLE hstdout = GetStdHandle(STD_OUTPUT_HANDLE);
+    const HANDLE hstdout = GetStdHandle(STD_OUTPUT_HANDLE);
     CONSOLE_SCREEN_BUFFER_INFO csbi;
     GetConsoleScreenBufferInfo(hstdout, &csbi);
     SetConsoleTextAttribute(hstdout, FOREGROUND_RED);

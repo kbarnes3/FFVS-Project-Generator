@@ -45,18 +45,21 @@ bool ProjectGenerator::outputProjectDCE(const StaticList& includeDirs)
     findFiles(m_projectDir + "*.cpp", searchFiles, recurse);
 #endif
     // Ensure we can add extra items to the list without needing reallocs
-    if (searchFiles.capacity() < searchFiles.size() + 250) {
-        searchFiles.reserve(searchFiles.size() + 250);
-    }
+    searchFiles.reserve(((searchFiles.size() + m_includesH.size()) * 3) + 500);
 
     // Check for DCE constructs
     map<string, DCEParams> foundDCEUsage;
     set<string> nonDCEUsage;
     StaticList preProcFiles;
-    // Search through each included file
     for (auto itFile = searchFiles.begin(); itFile < searchFiles.end(); ++itFile) {
-        // Open the input file
         m_configHelper.makeFileGeneratorRelative(*itFile, *itFile);
+        if (itFile->find("./") == 0) {
+            *itFile = itFile->substr(2);
+        }
+    }
+    // Search through each included file
+    for (auto itFile = searchFiles.cbegin(); itFile < searchFiles.cend(); ++itFile) {
+        // Open the input file
         string file;
         if (!loadFromFile(*itFile, file)) {
             return false;
@@ -68,46 +71,63 @@ bool ProjectGenerator::outputProjectDCE(const StaticList& includeDirs)
         }
 
         // Check if this file includes additional source files
-        uint findPos = file.find(".c\"");
-        while (findPos != string::npos) {
-            // Check if this is an include
-            uint findPos2 = file.rfind("#include \"", findPos);
-            if ((findPos2 != string::npos) && (findPos - findPos2 < 50)) {
-                // Get the name of the file
-                findPos2 += 10;
-                findPos += 2;
-                string templateFile = file.substr(findPos2, findPos - findPos2);
-                // check if file contains current project
-                uint projName = templateFile.find(m_projectName);
-                if (projName != string::npos) {
-                    templateFile = templateFile.substr(projName + m_projectName.length() + 1);
-                }
-                string found;
-                string back = templateFile;
-                templateFile = m_projectDir + back;
-                if (!findFile(templateFile, found)) {
-                    templateFile = (m_configHelper.m_rootDirectory.length() > 0) ?
-                        m_configHelper.m_rootDirectory + '/' + back :
-                        back;
-                    if (!findFile(templateFile, found)) {
-                        templateFile = m_configHelper.m_solutionDirectory + m_projectName + '/' + back;
+        vector<string> extensions = {".c\"", ".h\""};
+        for (auto& ext : extensions) {
+            uint findPos = file.find(ext);
+            while (findPos != string::npos) {
+                // Check if this is an include
+                uint findPos2 = file.rfind("#include \"", findPos);
+                if ((findPos2 != string::npos) && (findPos - findPos2 < 50)) {
+                    // Get the name of the file
+                    findPos2 += 10;
+                    findPos += 2;
+                    string templateFile = file.substr(findPos2, findPos - findPos2);
+                    // Split filename from any directory structures
+                    replace(templateFile.begin(), templateFile.end(), '\\', '/');
+                    uint projName = templateFile.rfind('/');
+                    if (projName != string::npos) {
+                        templateFile = templateFile.substr(projName + 1);
+                    }
+                    if (templateFile.length() >= 3) {
+                        string found;
+                        string back = templateFile;
+                        templateFile = m_projectDir + back;
                         if (!findFile(templateFile, found)) {
-                            templateFile = itFile->substr(0, itFile->rfind('/') + 1) + back;
+                            templateFile = (m_configHelper.m_rootDirectory.length() > 0) ?
+                                m_configHelper.m_rootDirectory + '/' + back :
+                                back;
                             if (!findFile(templateFile, found)) {
-                                outputError("Failed to find included file " + back);
-                                return false;
+                                templateFile = m_configHelper.m_solutionDirectory + m_projectName + '/' + back;
+                                if (!findFile(templateFile, found)) {
+                                    templateFile = itFile->substr(0, itFile->rfind('/') + 1) + back;
+                                    if (!findFile(templateFile, found)) {
+                                        templateFile = m_configHelper.m_solutionDirectory + back;
+                                        if (!findFile(templateFile, found)) {
+                                            // Fail only if this is a c file
+                                            if (ext == extensions[0]) {
+                                                outputError("Failed to find included file " + back);
+                                                return false;
+                                            }
+                                            templateFile = "";
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        // Add the file to the list
+                        if (templateFile.length() >= 3) {
+                            if (templateFile.find("./") == 0) {
+                                templateFile = templateFile.substr(2);
+                            }
+                            if (find(searchFiles.begin(), searchFiles.end(), templateFile) == searchFiles.end()) {
+                                searchFiles.push_back(templateFile);
                             }
                         }
                     }
                 }
-                // Add the file to the list
-                if (find(searchFiles.begin(), searchFiles.end(), templateFile) == searchFiles.end()) {
-                    m_configHelper.makeFileProjectRelative(templateFile, templateFile);
-                    searchFiles.push_back(templateFile);
-                }
+                // Check for more
+                findPos = file.find(ext, findPos + 1);
             }
-            // Check for more
-            findPos = file.find(".c\"", findPos + 1);
         }
     }
 #if !FORCEALLDCE
@@ -118,9 +138,7 @@ bool ProjectGenerator::outputProjectDCE(const StaticList& includeDirs)
     findFiles(m_projectDir + "*.c", searchFiles, recurse);
     findFiles(m_projectDir + "*.cpp", searchFiles, recurse);
     // Ensure we can add extra items to the list without needing reallocs
-    if (searchFiles.capacity() < searchFiles.size() + 250) {
-        searchFiles.reserve(searchFiles.size() + 250);
-    }
+    searchFiles.reserve(searchFiles.size() + 750);
 
     // Check all configurations are enabled early to avoid later lookups of unused functions
     for (auto i = foundDCEUsage.begin(); i != foundDCEUsage.end();) {
@@ -459,7 +477,13 @@ bool ProjectGenerator::outputProjectDCE(const StaticList& includeDirs)
             }
             outFile += function + " {";
             // Need to check return type
-            string return2 = function.substr(0, function.find_first_of(g_whiteSpace));
+            uint ret2 = function.find_first_of(g_whiteSpace);
+            string return2 = function.substr(0, ret2);
+            // Check if space before '*'
+            ret2 = function.find_first_not_of(g_whiteSpace, ret2 + 1);
+            if (function.at(ret2) == '*') {
+                return2 += '*';
+            }
             if (return2 == "void") {
                 outFile += "return;";
             } else if (return2 == "int") {
@@ -525,7 +549,11 @@ bool ProjectGenerator::outputProjectDCE(const StaticList& includeDirs)
             }
         }
         string finalDCEOutFile = getCopywriteHeader(m_projectName + " DCE definitions") + '\n';
-        finalDCEOutFile += "\n#include \"config.h\"\n#include \"stdint.h\"\n\n";
+        finalDCEOutFile += "\n#include \"config.h\"\n#include \"stdint.h\"\n";
+        if (m_configHelper.m_configComponentsStart > 0) {
+            finalDCEOutFile += "#include \"config_components.h\"\n";
+        }
+        finalDCEOutFile += '\n';
         // Add all header files (goes backwards to avoid bug in header include order in avcodec between vp9.h and
         // h264pred.h)
         for (auto i = includedHeaders.end(); i > includedHeaders.begin();) {

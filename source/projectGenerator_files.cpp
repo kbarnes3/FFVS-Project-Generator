@@ -99,7 +99,8 @@ bool ProjectGenerator::checkProjectFiles()
     }
 
     // Check the output Unknown Includes and find there corresponding file
-    if (!findProjectFiles(m_includes, m_includesC, m_includesCPP, m_includesASM, m_includesH, m_includesCU)) {
+    if (!findProjectFiles(
+            m_includes, m_includesC, m_includesCPP, m_includesASM, m_includesH, m_includesRC, m_includesCU)) {
         return false;
     }
 
@@ -113,40 +114,41 @@ bool ProjectGenerator::checkProjectFiles()
     for (auto& include : m_replaceIncludes) {
         replaceIncludes.push_back(include.first);
     }
-    if (!findProjectFiles(
-            replaceIncludes, replaceCIncludes, replaceCPPIncludes, replaceASMIncludes, m_includesH, m_includesCU)) {
+    if (!findProjectFiles(replaceIncludes, replaceCIncludes, replaceCPPIncludes, replaceASMIncludes, m_includesH,
+            m_includesRC, m_includesCU)) {
         return false;
     }
     // Need to create local files for any replace objects
-    if (!createReplaceFiles(replaceCIncludes, m_includesC)) {
+    if (!createReplaceFiles(replaceCIncludes, m_includesC, m_includesConditionalC)) {
         return false;
     }
-    if (!createReplaceFiles(replaceCPPIncludes, m_includesCPP)) {
+    if (!createReplaceFiles(replaceCPPIncludes, m_includesCPP, m_includesConditionalCPP)) {
         return false;
     }
-    if (!createReplaceFiles(replaceASMIncludes, m_includesASM)) {
+    if (!createReplaceFiles(replaceASMIncludes, m_includesASM, m_includesConditionalASM)) {
         return false;
     }
     return true;
 }
 
-bool ProjectGenerator::createReplaceFiles(const StaticList& replaceIncludes, StaticList& existingIncludes)
+bool ProjectGenerator::createReplaceFiles(
+    const StaticList& replaceIncludes, StaticList& existingIncludes, ConditionalList& conditionalIncludes)
 {
     for (const auto& replaceInclude : replaceIncludes) {
-        // Check hasnt already been included as a fixed object
+        // Check hasn't already been included as a fixed object
         if (find(existingIncludes.begin(), existingIncludes.end(), replaceInclude) != existingIncludes.end()) {
             // skip this item
             continue;
         }
         // Convert file to format required to search ReplaceIncludes
         const uint extPos = replaceInclude.rfind('.');
-        const uint cutPos = replaceInclude.rfind('/') + 1;
+        const uint cutPos = replaceInclude.find('/', 5) + 1;
         string filename = replaceInclude.substr(cutPos, extPos - cutPos);
         string extension = replaceInclude.substr(extPos);
         string outFile = m_configHelper.m_solutionDirectory + m_projectName + "/" + filename + "_wrap" + extension;
         string newOutFile;
         m_configHelper.makeFileProjectRelative(outFile, newOutFile);
-        // Check hasnt already been included as a wrapped object
+        // Check hasn't already been included as a wrapped object
         if (find(existingIncludes.begin(), existingIncludes.end(), newOutFile) != existingIncludes.end()) {
             // skip this item
             outputInfo(newOutFile);
@@ -166,24 +168,70 @@ bool ProjectGenerator::createReplaceFiles(const StaticList& replaceIncludes, Sta
         }
         // Get the files dynamic config requirement
         string idents;
+        bool isStatic = false;
+        bool isShared = false;
+        bool is32 = false;
+        bool is64 = false;
+        bool hasOther = false;
         for (auto include = m_replaceIncludes[origName].begin(); include < m_replaceIncludes[origName].end();
              ++include) {
             idents += *include;
             if ((include + 1) < m_replaceIncludes[origName].end()) {
                 idents += " || ";
             }
+            if (*include == "ARCH_X86_32" || *include == "!ARCH_X86_64") {
+                is32 = true;
+            } else if (*include == "ARCH_X86_64" || *include == "!ARCH_X86_32") {
+                is64 = true;
+            } else if (*include == "CONFIG_SHARED" || *include == "!CONFIG_STATIC") {
+                isShared = true;
+            } else if (*include == "CONFIG_STATIC" || *include == "!CONFIG_SHARED") {
+                isStatic = true;
+            } else {
+                hasOther = true;
+            }
+        }
+        // Check if already a conditional file
+        auto j = conditionalIncludes.find(replaceInclude);
+        if (j != conditionalIncludes.end()) {
+            if (hasOther) {
+                conditionalIncludes.erase(j);
+            } else if (j->second.isStatic != isStatic || j->second.isShared != isShared || j->second.is32 != is32 ||
+                j->second.is64 != is64) {
+                outputError("Duplicate conditional files found with different conditions (" + replaceInclude + ")");
+                // TODO: Remove and make wrapped
+                return false;
+            } else {
+                // skip this item
+                continue;
+            }
+        }
+        // Check for config requirement that can be handled by VS (i.e. static/shared|32/64bit)
+        if ((isShared || isStatic || is32 || is64) && !hasOther) {
+            conditionalIncludes.emplace(replaceInclude, ConfigConds(isStatic, isShared, is32, is64));
+            continue;
         }
         // Create new file to wrap input object
         string prettyFile = "../" + replaceInclude;
         string newFile = getCopywriteHeader(filename + extension + " file wrapper for " + m_projectName);
         newFile += "\n\
 \n\
-#include \"config.h\"\n\
-#if " + idents +
-            "\n\
+#include \"config.h\"\n";
+        if (m_configHelper.m_configComponentsStart > 0 && extension != ".asm") {
+            newFile += "#include \"config_components.h\"\n";
+        }
+        newFile += "#if " + idents + "\n\
 #   include \"" +
             prettyFile + "\"\n\
 #endif";
+        // Check if assembly file
+        if (extension == ".asm") {
+            replace(newFile.begin(), newFile.end(), '#', '%');
+            findAndReplace(newFile, ".h", ".asm");
+            findAndReplace(newFile, "/**", ";");
+            findAndReplace(newFile, " */", ";");
+            findAndReplace(newFile, " *", ";");
+        }
         // Write output project
         if (!makeDirectory(m_configHelper.m_solutionDirectory + m_projectName)) {
             outputError("Failed creating local " + m_projectName + " directory");
@@ -199,7 +247,7 @@ bool ProjectGenerator::createReplaceFiles(const StaticList& replaceIncludes, Sta
 }
 
 bool ProjectGenerator::findProjectFiles(const StaticList& includes, StaticList& includesC, StaticList& includesCPP,
-    StaticList& includesASM, StaticList& includesH, StaticList& includesCU) const
+    StaticList& includesASM, StaticList& includesH, StaticList& includesRC, StaticList& includesCU) const
 {
     for (const auto& include : includes) {
         string retFileName;
@@ -235,6 +283,14 @@ bool ProjectGenerator::findProjectFiles(const StaticList& includes, StaticList& 
                 continue;
             }
             includesH.push_back(retFileName);
+        } else if (findSourceFile(include, ".rc", retFileName)) {
+            // Found a H File to include
+            m_configHelper.makeFileProjectRelative(retFileName, retFileName);
+            if (find(includesRC.begin(), includesRC.end(), retFileName) != includesRC.end()) {
+                // skip this item
+                continue;
+            }
+            includesRC.push_back(retFileName);
         } else if (include.find(".ptx") != string::npos) {
             // Found a CUDA file
             string fileName = include.substr(0, include.find(".ptx"));

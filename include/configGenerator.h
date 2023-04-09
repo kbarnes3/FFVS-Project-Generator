@@ -59,9 +59,9 @@ private:
 
     ValuesList m_fixedConfigValues;
     ValuesList m_configValues;
-    uint m_configValuesEnd{};
+    uint m_configComponentsStart{0};
+    uint m_configValuesEnd{0};
     string m_configureFile;
-    string m_toolchain;
     bool m_isLibav{false};
     string m_projectName;
     string m_rootDirectory;
@@ -253,6 +253,8 @@ private:
      */
     bool buildDefaultValues();
 
+    bool buildAutoDetectValues();
+
     /**
      * Sets up all config values that have a forced value.
      * @return True if it succeeds, false if it fails.
@@ -273,10 +275,12 @@ private:
      * @param option    The option to update.
      * @param enable    True to enable, false to disable.
      * @param weak      (Optional) True to only change a value if it is not already set.
+     * @param deep      (Optional) True to also enable _select and _suggest dependencies.
      * @param recursive (Optional) True if the function has been called from within itself.
      * @returns True if it succeeds, false if it fails.
      */
-    bool toggleConfigValue(const string& option, bool enable, bool weak = false, bool recursive = false);
+    bool toggleConfigValue(
+        const string& option, bool enable, bool weak = false, bool deep = false, bool recursive = false);
 
     /**
      * Gets configuration option.

@@ -182,6 +182,7 @@ bool ConfigGenerator::buildDefaultValues()
     fastToggleConfigValue("d3d11_h", true);
     fastToggleConfigValue("direct_h", true);
     fastToggleConfigValue("dos_paths", true);
+    fastToggleConfigValue("DPI_AWARENESS_CONTEXT", true);
     fastToggleConfigValue("dxgidebug_h", true);
     fastToggleConfigValue("dxva_h", true);
     fastToggleConfigValue("dxva2api_cobj", true);
@@ -198,6 +199,7 @@ bool ConfigGenerator::buildDefaultValues()
     fastToggleConfigValue("GetStdHandle", true);
     fastToggleConfigValue("GetProcessTimes", true);
     fastToggleConfigValue("GetSystemTimeAsFileTime", true);
+    fastToggleConfigValue("IDXGIOUTPUT5", true);
     fastToggleConfigValue("io_h", true);
     fastToggleConfigValue("inline_asm_labels", true);
     fastToggleConfigValue("isatty", true);
@@ -229,12 +231,12 @@ bool ConfigGenerator::buildDefaultValues()
     fastToggleConfigValue("struct_pollfd", true);
     fastToggleConfigValue("struct_sockaddr_in6", true);
     fastToggleConfigValue("struct_sockaddr_storage", true);
-    fastToggleConfigValue("unistd_h", true);
-    fastToggleConfigValue("uwp", false);
+    fastToggleConfigValue("unistd_h", false);
+    fastToggleConfigValue("uwp", true);
     fastToggleConfigValue("VirtualAlloc", true);
     fastToggleConfigValue("windows_h", true);
     fastToggleConfigValue("winsock2_h", true);
-    fastToggleConfigValue("winrt", false);
+    fastToggleConfigValue("winrt", true);
     fastToggleConfigValue("wglgetprocaddress", true);
 
     fastToggleConfigValue("aligned_stack", true);
@@ -263,135 +265,8 @@ bool ConfigGenerator::buildDefaultValues()
     const auto autoDet = getConfigOption("autodetect");
     if ((autoDet == m_configValues.end()) || (autoDet->m_value != "0")) {
         // Enable all the auto detected libs
-        list.resize(0);
+        vector<string> list;
         if (getConfigList("AUTODETECT_LIBS", list)) {
-            string sFileName;
-            for (const auto& i : list) {
-                bool enable;
-                // Handle detection of various libs
-                if (i == "alsa") {
-                    enable = false;
-                } else if (i == "amf") {
-                    makeFileGeneratorRelative(m_outDirectory + "include/AMF/core/Factory.h", sFileName);
-                    enable = findFile(sFileName, sFileName);
-                } else if (i == "appkit") {
-                    enable = false;
-                } else if (i == "bzlib") {
-                    makeFileGeneratorRelative(m_outDirectory + "include/bzlib.h", sFileName);
-                    enable = findFile(sFileName, sFileName);
-                } else if (i == "iconv") {
-                    makeFileGeneratorRelative(m_outDirectory + "include/iconv.h", sFileName);
-                    enable = findFile(sFileName, sFileName);
-                } else if (i == "jack") {
-                    enable = false;
-                } else if (i == "libxcb") {
-                    enable = false;
-                } else if (i == "libxcb_shm") {
-                    enable = false;
-                } else if (i == "libxcb_shape") {
-                    enable = false;
-                } else if (i == "libxcb_xfixes") {
-                    enable = false;
-                } else if (i == "lzma") {
-                    makeFileGeneratorRelative(m_outDirectory + "include/lzma.h", sFileName);
-                    enable = findFile(sFileName, sFileName);
-                } else if (i == "mediafoundation") {
-                    enable = true;
-                } else if (i == "schannel") {
-                    enable = true;
-                } else if (i == "sdl2") {
-                    makeFileGeneratorRelative(m_outDirectory + "include/SDL/SDL.h", sFileName);
-                    enable = findFile(sFileName, sFileName);
-                } else if (i == "securetransport") {
-                    enable = false;
-                } else if (i == "sndio") {
-                    enable = false;
-                } else if (i == "xlib") {
-                    enable = false;
-                } else if (i == "zlib") {
-                    makeFileGeneratorRelative(m_outDirectory + "include/zlib.h", sFileName);
-                    enable = findFile(sFileName, sFileName);
-                } else if (i == "amf") {
-                    makeFileGeneratorRelative(m_outDirectory + "include/AMF/core/Version.h", sFileName);
-                    enable = findFile(sFileName, sFileName);
-                } else if (i == "audiotoolbox") {
-                    enable = false;
-                } else if (i == "crystalhd") {
-                    enable = false;
-                } else if (i == "cuda") {
-                    enable = findFile(m_rootDirectory + "compat/cuda/dynlink_cuda.h", sFileName);
-                    if (!enable) {
-                        makeFileGeneratorRelative(m_outDirectory + "include/ffnvcodec/dynlink_cuda.h", sFileName);
-                        enable = findFile(sFileName, sFileName);
-                    }
-                } else if (i == "cuvid") {
-                    enable = findFile(m_rootDirectory + "compat/cuda/dynlink_cuda.h", sFileName);
-                    if (!enable) {
-                        makeFileGeneratorRelative(m_outDirectory + "include/ffnvcodec/dynlink_cuda.h", sFileName);
-                        enable = findFile(sFileName, sFileName);
-                    }
-                } else if (i == "d3d11va") {
-                    enable = true;
-                } else if (i == "dxva2") {
-                    enable = true;
-                } else if (i == "ffnvcodec") {
-                    makeFileGeneratorRelative(m_outDirectory + "include/ffnvcodec/dynlink_cuda.h", sFileName);
-                    enable = findFile(sFileName, sFileName);
-                } else if (i == "nvdec") {
-                    enable = (findFile(m_rootDirectory + "compat/cuda/dynlink_loader.h", sFileName) &&
-                        findFile(m_rootDirectory + "compat/cuda/dynlink_cuda.h", sFileName));
-                    if (!enable) {
-                        makeFileGeneratorRelative(m_outDirectory + "include/ffnvcodec/dynlink_loader.h", sFileName);
-                        enable = findFile(sFileName, sFileName);
-                    }
-                } else if (i == "nvenc") {
-                    enable = findFile(m_rootDirectory + "compat/nvenc/nvEncodeAPI.h", sFileName);
-                    if (!enable) {
-                        makeFileGeneratorRelative(m_outDirectory + "include/ffnvcodec/nvEncodeAPI.h", sFileName);
-                        enable = findFile(sFileName, sFileName);
-                    }
-                } else if (i == "opencl") {
-                    makeFileGeneratorRelative(m_outDirectory + "include/cl/cl.h", sFileName);
-                    enable = findFile(sFileName, sFileName);
-                    if (enable) {
-                        fastToggleConfigValue("opencl_d3d11", true);
-                        fastToggleConfigValue("opencl_dxva2", true);
-                    }
-                } else if (i == "vaapi") {
-                    enable = false;
-                } else if (i == "vda") {
-                    enable = false;
-                } else if (i == "vdpau") {
-                    enable = false;
-                } else if (i == "videotoolbox_hwaccel") {
-                    enable = false;
-                } else if (i == "v4l2_m2m") {
-                    enable = false;
-                } else if (i == "xvmc") {
-                    enable = false;
-                } else if (i == "pthreads") {
-                    enable = false;
-                } else if (i == "os2threads") {
-                    enable = false;
-                } else if (i == "w32threads") {
-                    enable = true;
-                } else if (i == "avfoundation") {
-                    enable = false;
-                } else if (i == "coreimage") {
-                    enable = false;
-                } else if (i == "videotoolbox") {
-                    enable = false;
-                } else if (i == "cuda_llvm" || i == "cuda_nvcc") {
-                    // Not currently supported
-                    enable = false;
-                } else {
-                    // This is an unknown option
-                    outputInfo("Found unknown auto detected option " + i);
-                    // Just disable
-                    enable = false;
-                }
-                fastToggleConfigValue(i, enable);
-            }
             fastToggleConfigValue("autodetect", true);
         } else {
             // If no auto list then just use hard enables
@@ -421,6 +296,143 @@ bool ConfigGenerator::buildDefaultValues()
     return buildForcedValues();
 }
 
+bool ConfigGenerator::buildAutoDetectValues()
+{
+    // Check if auto detection is enabled
+    const auto autoDet = getConfigOption("autodetect");
+    if ((autoDet != m_configValues.end())) {
+        // Enable/Disable all the auto detected libs
+        const bool enableAuto = (autoDet->m_value != "0");
+        vector<string> list;
+        if (getConfigList("AUTODETECT_LIBS", list)) {
+            string sFileName;
+            for (const auto& i : list) {
+                bool enable;
+                // Handle detection of various libs
+                if (i == "alsa") {
+                    enable = false;
+                } else if (i == "amf") {
+                    makeFileGeneratorRelative(m_outDirectory + "include/AMF/core/Factory.h", sFileName);
+                    enable = findFile(sFileName, sFileName);
+                } else if (i == "appkit") {
+                    enable = false;
+                } else if (i == "audiotoolbox") {
+                    enable = false;
+                } else if (i == "avfoundation") {
+                    enable = false;
+                } else if (i == "bzlib") {
+                    makeFileGeneratorRelative(m_outDirectory + "include/bzlib.h", sFileName);
+                    enable = findFile(sFileName, sFileName);
+                } else if (i == "coreimage") {
+                    enable = false;
+                } else if (i == "crystalhd") {
+                    enable = false;
+                } else if (i == "cuda" || i == "cuvid") {
+                    enable = findFile(m_rootDirectory + "compat/cuda/dynlink_cuda.h", sFileName);
+                    if (!enable) {
+                        makeFileGeneratorRelative(m_outDirectory + "include/ffnvcodec/dynlink_cuda.h", sFileName);
+                        enable = findFile(sFileName, sFileName);
+                    }
+                } else if (i == "cuda_llvm" || i == "cuda_nvcc") {
+                    // Not currently supported
+                    enable = false;
+                } else if (i == "d3d11va") {
+                    enable = true;
+                } else if (i == "dxva2") {
+                    enable = true;
+                } else if (i == "ffnvcodec") {
+                    makeFileGeneratorRelative(m_outDirectory + "include/ffnvcodec/dynlink_cuda.h", sFileName);
+                    enable = findFile(sFileName, sFileName);
+                } else if (i == "iconv") {
+                    makeFileGeneratorRelative(m_outDirectory + "include/iconv.h", sFileName);
+                    enable = findFile(sFileName, sFileName);
+                } else if (i == "jack") {
+                    enable = false;
+                } else if (i == "libxcb") {
+                    enable = false;
+                } else if (i == "libxcb_shm") {
+                    enable = false;
+                } else if (i == "libxcb_shape") {
+                    enable = false;
+                } else if (i == "libxcb_xfixes") {
+                    enable = false;
+                } else if (i == "lzma") {
+                    makeFileGeneratorRelative(m_outDirectory + "include/lzma.h", sFileName);
+                    enable = findFile(sFileName, sFileName);
+                } else if (i == "mediafoundation") {
+                    enable = true;
+                } else if (i == "metal") {
+                    enable = false;
+                } else if (i == "nvdec") {
+                    enable = (findFile(m_rootDirectory + "compat/cuda/dynlink_loader.h", sFileName) &&
+                        findFile(m_rootDirectory + "compat/cuda/dynlink_cuda.h", sFileName));
+                    if (!enable) {
+                        makeFileGeneratorRelative(m_outDirectory + "include/ffnvcodec/dynlink_loader.h", sFileName);
+                        enable = findFile(sFileName, sFileName);
+                    }
+                } else if (i == "nvenc") {
+                    enable = findFile(m_rootDirectory + "compat/nvenc/nvEncodeAPI.h", sFileName);
+                    if (!enable) {
+                        makeFileGeneratorRelative(m_outDirectory + "include/ffnvcodec/nvEncodeAPI.h", sFileName);
+                        enable = findFile(sFileName, sFileName);
+                    }
+                } else if (i == "opencl") {
+                    makeFileGeneratorRelative(m_outDirectory + "include/cl/cl.h", sFileName);
+                    enable = findFile(sFileName, sFileName);
+                    if (enable) {
+                        fastToggleConfigValue("opencl_d3d11", true);
+                        fastToggleConfigValue("opencl_dxva2", true);
+                    }
+                } else if (i == "os2threads") {
+                    enable = false;
+                } else if (i == "pthreads") {
+                    enable = false;
+                } else if (i == "schannel") {
+                    enable = true;
+                } else if (i == "sdl2") {
+                    makeFileGeneratorRelative(m_outDirectory + "include/SDL/SDL.h", sFileName);
+                    enable = findFile(sFileName, sFileName);
+                } else if (i == "securetransport") {
+                    enable = false;
+                } else if (i == "sndio") {
+                    enable = false;
+                } else if (i == "v4l2_m2m") {
+                    enable = false;
+                } else if (i == "vaapi") {
+                    enable = false;
+                } else if (i == "vda") {
+                    enable = false;
+                } else if (i == "vdpau") {
+                    enable = false;
+                } else if (i == "videotoolbox") {
+                    enable = false;
+                } else if (i == "videotoolbox_hwaccel") {
+                    enable = false;
+                } else if (i == "vulkan") {
+                    // Not currently supported
+                    enable = false;
+                } else if (i == "w32threads") {
+                    enable = true;
+                } else if (i == "xlib") {
+                    enable = false;
+                } else if (i == "xvmc") {
+                    enable = false;
+                } else if (i == "zlib") {
+                    makeFileGeneratorRelative(m_outDirectory + "include/zlib.h", sFileName);
+                    enable = findFile(sFileName, sFileName);
+                } else {
+                    // This is an unknown option
+                    outputInfo("Found unknown auto detected option " + i);
+                    // Just disable
+                    enable = false;
+                }
+                toggleConfigValue(i, enable && enableAuto, true);
+            }
+        }
+    }
+    return true;
+}
+
 bool ConfigGenerator::buildForcedValues()
 {
     // Additional options set for Intel compiler specific inline asm
@@ -443,6 +455,11 @@ bool ConfigGenerator::buildForcedValues()
     if (m_configureFile.find("disable mcdeint_filter") != string::npos) {
         fastToggleConfigValue("mcdeint_filter", false);
         fastToggleConfigValue("uspp_filter", false);
+    }
+    // Forced enables
+    if (m_configureFile.find("enable frame_thread_encoder") != string::npos) {
+        fastToggleConfigValue("frame_thread_encoder", true);
+        fastToggleConfigValue("w32threads", true);
     }
 
     return true;
@@ -469,6 +486,7 @@ void ConfigGenerator::buildReplaceValues(
     DefaultValuesList& replaceValues, string& header, DefaultValuesList& replaceValuesASM)
 {
     header = "#ifdef _WIN32\n\
+#   define WIN32_LEAN_AND_MEAN\n\
 #   include <sdkddkver.h>\n\
 #   include <winapifamily.h>\n\
 #endif";
@@ -560,6 +578,21 @@ void ConfigGenerator::buildReplaceValues(
 #else\n\
 #   define CONFIG_VP9_DXVA2_HWACCEL 0\n\
 #endif";
+    replaceValues["CONFIG_AV1_D3D11VA_HWACCEL"] = "#if defined(NTDDI_WIN10_FE)\n\
+#   define CONFIG_AV1_D3D11VA_HWACCEL 1\n\
+#else\n\
+#   define CONFIG_AV1_D3D11VA_HWACCEL 0\n\
+#endif";
+    replaceValues["CONFIG_AV1_D3D11VA2_HWACCEL"] = "#if defined(NTDDI_WIN10_FE)\n\
+#   define CONFIG_AV1_D3D11VA2_HWACCEL 1\n\
+#else\n\
+#   define CONFIG_AV1_D3D11VA2_HWACCEL 0\n\
+#endif";
+    replaceValues["CONFIG_AV1_DXVA2_HWACCEL"] = "#if defined(NTDDI_WIN10_FE)\n\
+#   define CONFIG_AV1_DXVA2_HWACCEL 1\n\
+#else\n\
+#   define CONFIG_AV1_DXVA2_HWACCEL 0\n\
+#endif";
     replaceValues["HAVE_OPENCL_D3D11"] = "#if defined(NTDDI_WIN8)\n\
 #   define HAVE_OPENCL_D3D11 1\n\
 #else\n\
@@ -569,6 +602,16 @@ void ConfigGenerator::buildReplaceValues(
 #   define HAVE_GETPROCESSAFFINITYMASK 1\n\
 #else\n\
 #   define HAVE_GETPROCESSAFFINITYMASK 0\n\
+#endif";
+    replaceValues["HAVE_IDXGIOUTPUT5"] = "#if defined(NTDDI_WIN10)\n\
+#   define HAVE_IDXGIOUTPUT5 1\n\
+#else\n\
+#   define HAVE_IDXGIOUTPUT5 0\n\
+#endif";
+    replaceValues["HAVE_DPI_AWARENESS_CONTEXT"] = "#if defined(NTDDI_WIN10_RS1)\n\
+#   define HAVE_DPI_AWARENESS_CONTEXT 1\n\
+#else\n\
+#   define HAVE_DPI_AWARENESS_CONTEXT 0\n\
 #endif";
 
     // Build values specific for WinRT builds
@@ -875,8 +918,8 @@ void ConfigGenerator::buildReplaceValues(
         }
     }
     for (auto& newReplaceValue : newReplaceValues) {
-        // Add them to the returned list (done here so that any checks above that test if it is reserved only operate on
-        // the unmodified original list)
+        // Add them to the returned list (done here so that any checks above that test if it is reserved only
+        // operate on the unmodified original list)
         replaceValues[newReplaceValue.first] = newReplaceValue.second;
     }
 
@@ -955,8 +998,6 @@ void ConfigGenerator::buildReservedValues(vector<string>& reservedItems)
     reservedItems.emplace_back("small");
     reservedItems.emplace_back("lto");
     reservedItems.emplace_back("pic");
-    // reservedItems.emplace_back("uwp");
-    // reservedItems.emplace_back("winrt");
 }
 
 void ConfigGenerator::buildAdditionalDependencies(DependencyList& additionalDependencies)
@@ -967,7 +1008,8 @@ void ConfigGenerator::buildAdditionalDependencies(DependencyList& additionalDepe
     additionalDependencies["const_nan"] = true;
     additionalDependencies["CreateDIBSection"] = true;
     additionalDependencies["dv1394"] = false;
-    additionalDependencies["DXVA_PicParams_AV1"] = false;
+    additionalDependencies["DXVA_PicParams_AV1"] = true; // Technically these require a compatible win sdk version
+    // but we check for that in the replace values that use these builtins
     additionalDependencies["DXVA_PicParams_HEVC"] = true;
     additionalDependencies["DXVA_PicParams_VP9"] = true;
     additionalDependencies["dxva2api_h"] = true;
@@ -976,6 +1018,8 @@ void ConfigGenerator::buildAdditionalDependencies(DependencyList& additionalDepe
     additionalDependencies["IBaseFilter"] = true;
     additionalDependencies["ID3D11VideoDecoder"] = true;
     additionalDependencies["ID3D11VideoContext"] = true;
+    additionalDependencies["DXGI_OUTDUPL_FRAME_INFO"] = true;
+    additionalDependencies["IDXGIOutput1"] = true;
     additionalDependencies["libcrystalhd_libcrystalhd_if_h"] = false;
     additionalDependencies["linux_fb_h"] = false;
     additionalDependencies["linux_videodev_h"] = false;
@@ -986,6 +1030,8 @@ void ConfigGenerator::buildAdditionalDependencies(DependencyList& additionalDepe
     additionalDependencies["parisc64"] = false;
     additionalDependencies["DXVA2_ConfigPictureDecode"] = true;
     additionalDependencies["snd_pcm_htimestamp"] = false;
+    string temp;
+    additionalDependencies["stdatomic"] = findFile(m_rootDirectory + "compat/atomics/win32/stdatomic.h", temp);
     additionalDependencies["va_va_h"] = false;
     additionalDependencies["vdpau_vdpau_h"] = false;
     additionalDependencies["vdpau_vdpau_x11_h"] = false;
@@ -1028,6 +1074,8 @@ void ConfigGenerator::buildAdditionalDependencies(DependencyList& additionalDepe
         additionalDependencies["atomics_native"] = true;
     }
     additionalDependencies["MFX_CODEC_VP9"] = isConfigOptionEnabled("libmfx");
+    bool bNvenc = isConfigOptionEnabled("nvenc");
+    additionalDependencies["NV_ENC_PIC_PARAMS_AV1"] = bNvenc;
 }
 
 void ConfigGenerator::buildInterDependencies(InterDependencies& interDependencies)
@@ -1166,6 +1214,10 @@ void ConfigGenerator::buildForcedEnables(const string& optionLower, vector<strin
         fastToggleConfigValue("uwp", true); // must use fastToggle to prevent infinite cycle
     } else if (optionLower == "uwp") {
         fastToggleConfigValue("winrt", true);
+    } else if (optionLower == "threads") {
+        CHECKFORCEDENABLES("w32threads");
+    } else if (optionLower == "w32threads") {
+        CHECKFORCEDENABLES("threads");
     }
 }
 
