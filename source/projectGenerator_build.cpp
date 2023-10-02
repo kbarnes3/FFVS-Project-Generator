@@ -278,6 +278,9 @@ void ProjectGenerator::buildDependencyValues(StaticList& includeDirs, StaticList
                 includeDirs.push_back("$(OutDir)/include/fribidi/");
                 includeDirs.push_back("$(ProjectDir)/../../prebuilt/include/fribidi/");
                 definesStatic.push_back("FRIBIDI_LIB_STATIC");
+            } else if (i.first == "libharfbuzz") {
+                includeDirs.push_back("$(OutDir)/include/harfbuzz/");
+                includeDirs.push_back("$(ProjectDir)/../../prebuilt/include/harfbuzz/");
             } else if (i.first == "libilbc") {
                 definesStatic.push_back("ILBC_STATIC_DEFINE");
             } else if (i.first == "libx264") {
@@ -396,7 +399,7 @@ void ProjectGenerator::buildProjectDependencies(map<string, bool>& projectDeps) 
     projectDeps["libfontconfig"] = (m_projectName == "libavfilter");
     projectDeps["ffnvcodec"] = (m_projectName == "libavutil") || (m_projectName == "libavcodec");
     projectDeps["frei0r"] = (m_projectName == "libavfilter");
-    projectDeps["gcrypt"] = (m_projectName == "libavformat");
+    projectDeps["gcrypt"] = (m_projectName == "libavformat") || (m_projectName == "libavutil");
     projectDeps["gmp"] = (m_projectName == "libavformat");
     projectDeps["gnutls"] = (m_projectName == "libavformat");
     projectDeps["iconv"] = (m_projectName == "libavformat") || (m_projectName == "libavcodec");
@@ -423,6 +426,7 @@ void ProjectGenerator::buildProjectDependencies(map<string, bool>& projectDeps) 
     projectDeps["libfribidi"] = (m_projectName == "libavfilter");
     projectDeps["libgme"] = (m_projectName == "libavformat");
     projectDeps["libgsm"] = (m_projectName == "libavcodec");
+    projectDeps["libharfbuzz"] = (m_projectName == "libavfilter");
     projectDeps["libiec61883"] = (m_projectName == "libavdevice");
     projectDeps["libilbc"] = (m_projectName == "libavcodec");
     projectDeps["libkvazaar"] = (m_projectName == "libavcodec");
@@ -495,7 +499,7 @@ void ProjectGenerator::buildProjectDependencies(map<string, bool>& projectDeps) 
         (m_projectName == "ffmpeg") || (m_projectName == "avconv") || (m_projectName == "ffplay") ||
         (m_projectName == "avplay") || (m_projectName == "ffprobe") || (m_projectName == "avprobe");
     projectDeps["opengl"] = (m_projectName == "libavdevice");
-    projectDeps["openssl"] = (m_projectName == "libavformat");
+    projectDeps["openssl"] = (m_projectName == "libavformat") || (m_projectName == "libavutil");
     projectDeps["schannel"] = (m_projectName == "libavformat");
     projectDeps["sdl"] = (m_projectName == "libavdevice") || (m_projectName == "ffplay") || (m_projectName == "avplay");
     projectDeps["sdl2"] =
