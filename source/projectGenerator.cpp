@@ -22,7 +22,6 @@
 
 #include <algorithm>
 #include <iomanip>
-#include <sstream>
 #include <utility>
 
 #define TEMPLATE_SLN_WINRT_ID 101
@@ -68,6 +67,8 @@ bool ProjectGenerator::passAllMake()
         // Check if library is enabled
         if (m_configHelper.isConfigOptionEnabled(i)) {
             m_projectDir = m_configHelper.m_rootDirectory + "lib" + i + "/";
+            const uint pos = m_projectDir.rfind('/', m_projectDir.length() - 2) + 1;
+            m_projectName = m_projectDir.substr(pos, m_projectDir.length() - 1 - pos);
             // Locate the project dir for specified library
             string retFileName;
             if (!findFile(m_projectDir + "MakeFile", retFileName)) {
@@ -185,10 +186,6 @@ void ProjectGenerator::errorFunc(const bool cleanupFiles)
 
 bool ProjectGenerator::outputProject()
 {
-    // Output the generated files
-    const uint pos = m_projectDir.rfind('/', m_projectDir.length() - 2) + 1;
-    m_projectName = m_projectDir.substr(pos, m_projectDir.length() - 1 - pos);
-
     // Check all files are correctly located
     if (!checkProjectFiles()) {
         return false;
@@ -431,6 +428,7 @@ void ProjectGenerator::outputProjectCleanup()
     m_libs.clear();
     m_unknowns.clear();
     m_projectDir.clear();
+    m_subDirs.clear();
 }
 
 bool ProjectGenerator::outputSolution()
@@ -1090,7 +1088,7 @@ void ProjectGenerator::outputSourceFiles(string& projectTemplate, string& filter
     filterTemplate.insert(findPosFilt, addFilters);
 }
 
-bool ProjectGenerator::outputProjectExports(const StaticList& includeDirs)
+bool ProjectGenerator::outputProjectExports(const StaticList& includeDirs) const
 {
     outputLine("  Generating project exports file (" + m_projectName + ")...");
     string exportList;
@@ -1345,7 +1343,7 @@ bool ProjectGenerator::outputProjectExports(const StaticList& includeDirs)
     return true;
 }
 
-void ProjectGenerator::outputBuildEvents(string& projectTemplate)
+void ProjectGenerator::outputBuildEvents(string& projectTemplate) const
 {
     // After </Lib> and </Link> and the post and then pre build events
     const string libLink[2] = {"</Lib>", "</Link>"};
@@ -1640,7 +1638,7 @@ bool ProjectGenerator::outputDependencyLibs(string& projectTemplate, const bool 
         }
         // Create List of additional dependencies
         string addDeps[4]; // debug, release, debugDll, releaseDll
-        for (auto i = libs.begin() + (size_t)m_projectLibs[m_projectName].size(); i < libs.end(); ++i) {
+        for (auto i = libs.begin() + m_projectLibs[m_projectName].size(); i < libs.end(); ++i) {
             addDeps[0] += *i;
             addDeps[0] += (!winrt) ? "d.lib;" : "d_winrt.lib;";
             addDeps[1] += *i;

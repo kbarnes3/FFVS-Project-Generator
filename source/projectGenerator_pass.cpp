@@ -647,9 +647,9 @@ bool ProjectGenerator::passMake()
                 } else if (m_inLine.substr(0, 5) == "endif") {
                     // Reset the current condition
                     condition.clear();
-                } else if (m_inLine.substr(0, 7) == "include") {
+                } else if (m_inLine.substr(0, 7) == "include" || m_inLine.substr(0, 8) == "-include") {
                     // Need to append the included file to makefile list
-                    uint startPos = m_inLine.find_first_not_of(" \t", 7);
+                    uint startPos = m_inLine.find_first_not_of(" \t", 7 + (m_inLine[0] == '-' ? 1 : 0));
                     uint endPos = m_inLine.find_first_of(" \t\n\r", startPos + 1);
                     endPos = (endPos == string::npos) ? endPos : endPos - startPos;
                     string newMake = m_inLine.substr(startPos, endPos);
@@ -658,20 +658,48 @@ bool ProjectGenerator::passMake()
                     while (startPos != string::npos) {
                         endPos = newMake.find(')', startPos + 1);
                         if (endPos == string::npos) {
-                            outputInfo("Invalid token (" + newMake + ")");
+                            outputError("Invalid token in include (" + newMake + ")");
                             return false;
                         }
                         ++endPos;
                         string token = newMake.substr(startPos, endPos - startPos);
                         if (token == "$(SRC_PATH)") {
                             newMake.replace(startPos, endPos - startPos, m_configHelper.m_rootDirectory);
+                        } else if (token == "$(ARCH)") {
+                            newMake.replace(startPos, endPos - startPos, "x86");
                         } else {
-                            outputInfo("Unknown token (" + token + ")");
+                            outputError("Unknown token in include (" + token + ")");
                             return false;
                         }
                         startPos = newMake.find('$', startPos);
                     }
                     makeFiles.push_back(newMake);
+                    // Add to internal list of known subdirectories
+                    const uint rootPos = newMake.find(m_configHelper.m_rootDirectory); 
+                    if (rootPos != string::npos) {
+                        newMake.erase(rootPos, m_configHelper.m_rootDirectory.length());
+                    }
+                    const uint projPos = newMake.find(m_projectName + '/');
+                    if (projPos != string::npos) {
+                        newMake.erase(projPos, m_projectName.length() + 1);
+                    }
+                    // Clean duplicate '//'
+                    uint findPos2 = newMake.find("//");
+                    while (findPos2 != string::npos) {
+                        newMake.erase(findPos2, 1);
+                        // get next
+                        findPos2 = newMake.find("//");
+                    }
+                    if (newMake[0] == '/') {
+                        newMake.erase(0, 1);
+                    }
+                    findPos2 = newMake.rfind('/');
+                    if (findPos2 != string::npos) {
+                        newMake.erase(findPos2);
+                    }
+                    if (!newMake.empty()) {
+                        m_subDirs.push_back(newMake);
+                    }
                 }
             }
             m_inputFile.close();

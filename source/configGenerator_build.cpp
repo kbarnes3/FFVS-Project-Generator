@@ -351,6 +351,8 @@ bool ConfigGenerator::buildAutoDetectValues()
                     enable = findFile(sFileName, sFileName);
                 } else if (i == "jack") {
                     enable = false;
+                } else if (i == "libdrm") {
+                    enable = false;
                 } else if (i == "libxcb") {
                     enable = false;
                 } else if (i == "libxcb_shm") {
@@ -1013,7 +1015,7 @@ void ConfigGenerator::buildReservedValues(vector<string>& reservedItems)
     reservedItems.emplace_back("pic");
 }
 
-void ConfigGenerator::buildAdditionalDependencies(DependencyList& additionalDependencies)
+void ConfigGenerator::buildAdditionalDependencies(DependencyList& additionalDependencies) const
 {
     additionalDependencies.clear();
     additionalDependencies["android"] = false;
