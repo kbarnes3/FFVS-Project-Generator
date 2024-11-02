@@ -205,6 +205,8 @@ void ProjectGenerator::buildDependencies(StaticList& libs, StaticList& addLibs, 
                 }
             } else if (i == "wincrypt") {
                 addLibs.emplace_back("Advapi32"); // Add the additional required libs
+            } else if (i == "vulkan") {
+                // Doesn't need any additional libs
             } else {
                 // By default just use the lib name and prefix with lib if not already
                 if (i.find("lib") == 0) {
@@ -263,6 +265,13 @@ void ProjectGenerator::buildDependencyValues(StaticList& includeDirs, StaticList
         atomicCompatFile = atomicCompatFile.substr(0, ++pos);
         includeDirs.push_back("$(ProjectDir)/" + atomicCompatFile);
     }
+    string bitCompatFile = m_configHelper.m_rootDirectory + "compat/stdbit/stdbit.h";
+    if (findFile(bitCompatFile, dep)) {
+        m_configHelper.makeFileProjectRelative(bitCompatFile, bitCompatFile);
+        uint pos = bitCompatFile.rfind('/'); // Get path only
+        bitCompatFile = bitCompatFile.substr(0, ++pos);
+        includeDirs.push_back("$(ProjectDir)/" + bitCompatFile);
+    }
 
     // Add root directory
     if (m_configHelper.m_rootDirectory != "./" && m_configHelper.m_rootDirectory != "../") {
@@ -271,13 +280,10 @@ void ProjectGenerator::buildDependencyValues(StaticList& includeDirs, StaticList
         includeDirs.push_back(projRoot);
     }
     
-    // Add subdirectory include dirs
-    for (const auto& sub : m_subDirs) {
-        includeDirs.push_back(projRoot + m_projectName + '/' + sub + '/');
-    }
+    // Add subdirectory include dirs (m_subDirs cannot be used as it creates clashes with identically named files)
     if (!m_subDirs.empty()) {
         includeDirs.push_back(projRoot + m_projectName + '/');
-    }  
+    }
 
     // Determine only those dependencies that are valid for current project
     map<string, bool> projectDeps;
@@ -385,6 +391,24 @@ void ProjectGenerator::buildDependencyValues(StaticList& includeDirs, StaticList
                         includeDirs.emplace_back("$(CUDA_PATH)/include/");
                         lib32Dirs.emplace_back("$(CUDA_PATH)/lib/Win32");
                         lib64Dirs.emplace_back("$(CUDA_PATH)/lib/x64");
+                    }
+                }
+            } else if (i.first == "vulkan" && !winrt) {
+                if (findEnvironmentVariable("VULKAN_SDK")) {
+                    includeDirs.emplace_back("$(VULKAN_SDK)/include/");
+                } else {
+                    string fileName;
+                    m_configHelper.makeFileGeneratorRelative(
+                        m_configHelper.m_outDirectory + "include/vulkan/vulkan.h", fileName);
+                    if (findFile(fileName, fileName)) {
+                        // Nothing to do as $(OutDir)/include is always added anyway
+                    } else {
+                        outputWarning("Could not find the Vulkan headers.");
+                        outputWarning(
+                            "Either the Vulkan SDK is not installed or the environment variable is missing or the headers are not installed in a known location.", false);
+                        outputWarning(
+                            "Vulkan requires the Vulkan headers to be available in the include path.",
+                            false);
                     }
                 }
             }
@@ -522,7 +546,8 @@ void ProjectGenerator::buildProjectDependencies(map<string, bool>& projectDeps) 
     projectDeps["sdl"] = (m_projectName == "libavdevice") || (m_projectName == "ffplay") || (m_projectName == "avplay");
     projectDeps["sdl2"] =
         (m_projectName == "libavdevice") || (m_projectName == "ffplay") || (m_projectName == "avplay");
-    projectDeps["vapoursynth"] = m_projectName.compare("libavformat");
+    projectDeps["vapoursynth"] = m_projectName == "libavformat";
+    projectDeps["vulkan"] = (m_projectName == "libavcodec") || (m_projectName == "libavutil");
     projectDeps["zlib"] = (m_projectName == "libavformat") || (m_projectName == "libavcodec");
 }
 

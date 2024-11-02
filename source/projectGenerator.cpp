@@ -1068,7 +1068,8 @@ void ProjectGenerator::outputSourceFiles(string& projectTemplate, string& filter
         "bf017c32-250d-47da-b7e6-d5a5091cb1e6", "fd9e10e9-18f6-437d-b5d7-17290540c8b8",
         "f026e68e-ff14-4bf4-8758-6384ac7bcfaf", "a2d068fe-f5d5-4b6f-95d4-f15631533341",
         "8a4a673d-2aba-4d8d-a18e-dab035e5c446", "0dcfb38d-54ca-4ceb-b383-4662f006eca9",
-        "57bf1423-fb68-441f-b5c1-f41e6ae5fa9c"};
+        "57bf1423-fb68-441f-b5c1-f41e6ae5fa9c", "bda0568e-a423-4fcc-affe-6ba7c2a40f78",
+        "60d9e8db-aa53-43bc-852b-44f83e68a787", "63a40443-4e21-4bd2-9e25-595f5d5857c9"};
 
     // get start position in file
     uint findPosFilt = filterTemplate.find("</ItemGroup>");
@@ -1088,9 +1089,8 @@ void ProjectGenerator::outputSourceFiles(string& projectTemplate, string& filter
     filterTemplate.insert(findPosFilt, addFilters);
 }
 
-bool ProjectGenerator::outputProjectExports(const StaticList& includeDirs) const
+bool ProjectGenerator::findExportsList(StaticList& exportPrefixes) const
 {
-    outputLine("  Generating project exports file (" + m_projectName + ")...");
     string exportList;
     if (!findFile(this->m_projectDir + "/*.v", exportList)) {
         outputError("Failed finding project exports (" + m_projectName + ")");
@@ -1102,8 +1102,7 @@ bool ProjectGenerator::outputProjectExports(const StaticList& includeDirs) const
     loadFromFile(this->m_projectDir + exportList, exportsFile);
 
     // Search for start of global tag
-    string global = "global:";
-    StaticList exportStrings;
+    const string global = "global:";
     uint findPos = exportsFile.find(global);
     if (findPos != string::npos) {
         // Remove everything outside the global section
@@ -1127,12 +1126,22 @@ bool ProjectGenerator::outputProjectExports(const StaticList& includeDirs) const
         findPos = 0;
         findPos2 = exportsFile.find(';');
         while (findPos2 != string::npos) {
-            exportStrings.push_back(exportsFile.substr(findPos, findPos2 - findPos));
+            exportPrefixes.push_back(exportsFile.substr(findPos, findPos2 - findPos));
             findPos = findPos2 + 1;
             findPos2 = exportsFile.find(';', findPos);
         }
+        return true;
     } else {
         outputError("Failed finding global start in project exports (" + exportList + ")");
+        return false;
+    }
+}
+
+bool ProjectGenerator::outputProjectExports(const StaticList& includeDirs) const
+{
+    outputLine("  Generating project exports file (" + m_projectName + ")...");
+    StaticList exportStrings;
+    if (!findExportsList(exportStrings)) {
         return false;
     }
 
@@ -1194,7 +1203,7 @@ bool ProjectGenerator::outputProjectExports(const StaticList& includeDirs) const
             // ID is a 2 or 3 character sequence used to uniquely identify the object
 
             // Check if it is a wild card search
-            findPos = j.find('*');
+            uint findPos = j.find('*');
             if (findPos != string::npos) {
                 // Strip the wild card (Note: assumes wild card is at the end!)
                 string search = j.substr(0, findPos);
@@ -1287,7 +1296,7 @@ bool ProjectGenerator::outputProjectExports(const StaticList& includeDirs) const
         // Search through file for module exports
         for (const auto& j : exportStrings) {
             // Check if it is a wild card search
-            findPos = j.find('*');
+            uint findPos = j.find('*');
             const string invalidChars = ",.(){}[]`'\"+-*/!@#$%^&*<>|;\\= \r\n\t";
             if (findPos != string::npos) {
                 // Strip the wild card (Note: assumes wild card is at the end!)
@@ -1553,7 +1562,7 @@ void ProjectGenerator::outputASMTools(string& projectTemplate) const
     if (m_configHelper.isASMEnabled() && (m_includesASM.size() > 0)) {
         string definesASM = "\r\n\
     <NASM>\r\n\
-      <IncludePaths>$(ProjectDir);$(ProjectDir)\\template_rootdir;$(ProjectDir)\\template_rootdir\\$(ProjectName)\\x86;%(IncludePaths)</IncludePaths>\r\n\
+      <IncludePaths>$(ProjectDir);$(ProjectDir)\\template_rootdir;$(ProjectDir)\\template_rootdir\\" + m_projectName + "\\x86;%(IncludePaths)</IncludePaths>\r\n\
       <PreIncludeFiles>config.asm;%(PreIncludeFiles)</PreIncludeFiles>\r\n\
       <GenerateDebugInformation>false</GenerateDebugInformation>\r\n\
     </NASM>";

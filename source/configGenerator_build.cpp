@@ -329,7 +329,8 @@ bool ConfigGenerator::buildAutoDetectValues()
                 } else if (i == "crystalhd") {
                     enable = false;
                 } else if (i == "cuda" || i == "cuvid") {
-                    enable = findFile(m_rootDirectory + "compat/cuda/dynlink_cuda.h", sFileName);
+                    enable = (findFile(m_rootDirectory + "compat/cuda/dynlink_loader.h", sFileName) &&
+                        findFile(m_rootDirectory + "compat/cuda/dynlink_cuda.h", sFileName));
                     if (!enable) {
                         makeFileGeneratorRelative(m_outDirectory + "include/ffnvcodec/dynlink_cuda.h", sFileName);
                         enable = findFile(sFileName, sFileName);
@@ -414,6 +415,18 @@ bool ConfigGenerator::buildAutoDetectValues()
                 } else if (i == "videotoolbox_hwaccel") {
                     enable = false;
                 } else if (i == "vulkan") {
+                    enable = false;
+                    if (findEnvironmentVariable("VULKAN_SDK")) {
+                        enable = true;
+                    } else {
+                        string fileName;
+                        makeFileGeneratorRelative(m_outDirectory + "include/vulkan/vulkan.h", fileName);
+                        if (findFile(fileName, fileName)) {
+                            enable = true;
+                        }
+                    }
+                } else if (i == "libglslang" || i == " libshaderc" ||
+                    i == " spirv_compiler") {
                     // Not currently supported
                     enable = false;
                 } else if (i == "w32threads") {
@@ -499,6 +512,8 @@ void ConfigGenerator::buildReplaceValues(
     // Add to config.h only list
     replaceValues["CC_IDENT"] = "#if defined(__INTEL_COMPILER)\n\
 #   define CC_IDENT \"icl\"\n\
+#elif defined(__clang__)\n\
+#   define CC_IDENT \"clang-cl\"\n\
 #else\n\
 #   define CC_IDENT \"msvc\"\n\
 #endif";
@@ -548,7 +563,7 @@ void ConfigGenerator::buildReplaceValues(
 #else\n\
 #   define HAVE_FAST_64BIT 0\n\
 #endif";
-    replaceValues["HAVE_INLINE_ASM"] = "#if defined(__INTEL_COMPILER)\n\
+    replaceValues["HAVE_INLINE_ASM"] = "#if defined(__INTEL_COMPILER) || defined(__clang__)\n\
 #   define HAVE_INLINE_ASM 1\n\
 #else\n\
 #   define HAVE_INLINE_ASM 0\n\
@@ -572,6 +587,11 @@ void ConfigGenerator::buildReplaceValues(
 #   define CONFIG_AV1_D3D12VA_HWACCEL 1\n\
 #else\n\
 #   define CONFIG_AV1_D3D12VA_HWACCEL 0\n\
+#endif";
+    replaceValues["CONFIG_D3D12VA_ENCODE"] = "#if CONFIG_D3D12VA && defined(NTDDI_WIN10_NI)\n\
+#   define CONFIG_D3D12VA_ENCODE 1\n\
+#else\n\
+#   define CONFIG_D3D12VA_ENCODE 0\n\
 #endif";
     replaceValues["CONFIG_D3D11VA"] = "#if defined(NTDDI_WIN8)\n\
 #   define CONFIG_D3D11VA 1\n\
@@ -820,6 +840,14 @@ void ConfigGenerator::buildReplaceValues(
 #   define CONFIG_OPENAL 0\n\
 #endif";
         }
+        opt = getConfigOptionPrefixed("CONFIG_VULKAN");
+        if ((opt != m_configValues.end()) && opt->m_value == "1") {
+            replaceValues["CONFIG_VULKAN"] = "#if " + winrtDefine + "\n\
+#   define CONFIG_VULKAN 1\n\
+#else\n\
+#   define CONFIG_VULKAN 0\n\
+#endif";
+        }
     }
 
     // Build replace values for all x86 inline asm
@@ -1035,6 +1063,8 @@ void ConfigGenerator::buildAdditionalDependencies(DependencyList& additionalDepe
     additionalDependencies["ID3D11VideoContext"] = true;
     additionalDependencies["ID3D12Device"] = true;
     additionalDependencies["ID3D12VideoDecoder"] = true;
+    additionalDependencies["ID3D12VideoEncoder"] = true;
+    additionalDependencies["d3d12_encoder_feature"] = true;
     additionalDependencies["DXGI_OUTDUPL_FRAME_INFO"] = true;
     additionalDependencies["IDXGIOutput1"] = true;
     additionalDependencies["libcrystalhd_libcrystalhd_if_h"] = false;
